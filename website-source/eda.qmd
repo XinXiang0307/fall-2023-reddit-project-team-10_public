@@ -1,0 +1,1367 @@
+---
+title: Milestone 1 EDA
+author:
+  - Project Team 10
+  - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
+---
+
+![](imgs/eda.svg)
+
+# Analysis Report
+
+# EDA Topics 0: Data Preprocess
+
+## 1. Submission Data
+
+### 1.1 Preliminary Cleaning
+
+The submission dataset is refined by renaming columns for better identification, such as prefixing them with 'submission_'. It is then filtered to retain entries solely from the 'MBTI' subreddit, ensuring relevance to the topic of interest. The final step in this cleaning phase involves selecting key columns that are critical for analysis, thereby simplifying the dataset and preparing it for the next stages of the project.
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import col, substring
+
+# Rename the columns
+submissions_df = submissions_df.withColumnRenamed("author", "submission_author") \
+                   .withColumnRenamed("title", "submission_title") \
+                   .withColumnRenamed("score", "submission_score") \
+                   .withColumnRenamed("created_utc", "submission_created_date") \
+                   .withColumnRenamed("year", "submission_year") \
+                   .withColumnRenamed("month", "submission_month") \
+                   .withColumnRenamed("self_text", "submission_self_text")
+
+# filter by subreddit
+submissions_df = submissions_df.filter(col("subreddit") == "mbti")
+
+# subset data
+submissions_df = submissions_df.select("id","submission_author","num_crossposts","num_comments","submission_score","submission_title","submission_created_date","submission_year","submission_month")
+```
+
+
+### 1.2 Create "Mbti_type_related" Column Using Regex
+In this step, a regular expression pattern was crafted to match any of the sixteen MBTI personality types mentioned in subreddit post titles. A custom extraction function was defined to search for these types and aggregate any found into the new mbti_type_related column, all in uppercase for uniformity. Titles featuring multiple MBTI types have them all listed in this column, separated by commas. For instance, a post titled "How do INFP and INTJ get along?" would yield "INFP, INTJ" in this column. Posts that don't reference specific MBTI types are assigned the value 'general', ensuring that every post is categorized for later analysis. This step is crucial for our goal of analyzing post statistics relative to MBTI orientations in subreddit discussions.
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import udf, when
+from pyspark.sql.types import StringType
+import re
+
+# List of personality types in uppercase
+personality_types = ["ESTJ", "ISTJ", "INFP", "ENFP", "INTJ", "ENTJ", "INTP", "ENTP",
+                    "ESFJ", "ISFJ", "ENFJ", "INFJ", "ESFP", "ISFP", "ISTP", "ESTP"]
+
+# Convert the list to a regex pattern with case-insensitive flag
+pattern = "(?i)\\b(" + "|".join(personality_types) + ")\\b"
+
+# Define UDF to extract all matches
+def extract_all_types(title):
+    matches = re.findall(pattern, title, re.IGNORECASE)
+    # Convert matches to uppercase
+    matches_upper = [match.upper() for match in matches]
+    return ', '.join(matches_upper)
+
+extract_all_types_udf = udf(extract_all_types, StringType())
+
+# Apply UDF to get all MBTI types
+submission_df = submissions_df.withColumn("mbti_type_related_temp", extract_all_types_udf(col("submission_title")))
+
+# Set 'mbti_type_related' to 'general' for empty matches
+submission_df = submission_df.withColumn("mbti_type_related",
+                                         when(col("mbti_type_related_temp") == "", "general")
+                                         .otherwise(col("mbti_type_related_temp")))
+
+# Drop the temporary column
+submission_df = submission_df.drop("mbti_type_related_temp")
+```
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/sub_mbti_type_related.csv")
+md = tabulate(df.head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+### 1.3 Final Submission Data
+
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/sub_head.csv")
+md = tabulate(df.head(2), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+## 2. Comment Data
+
+### 2.1 Preliminary Cleaning
+
+The comment dataset undergoes a cleaning process where columns are renamed with a 'comment_' prefix to ensure clarity and consistency. Only essential columns such as submission identifiers, author information, comment content, and associated metadata are retained. This streamlined dataset is then prepared for targeted analysis within the 'MBTI' subreddit community.
+```{python}
+#| eval: false
+comments_df = spark.read.parquet(f"{wasbs_base_url}{comments_path}")
+# Rename the columns
+comments_df = comments_df.withColumnRenamed("author", "comment_author") \
+                   .withColumnRenamed("body", "comment_text") \
+                   .withColumnRenamed("score", "comment_score")\
+                   .withColumnRenamed("controversiality", "comment_controversiality")
+
+# select useful columns
+comments_df = comments_df.select("sub_id","comment_author", "comment_text", "link_id","comment_score","comment_controversiality","reply_to","year","month")
+```
+
+### 2.2 Create "reply_to" Column
+
+During the data cleaning phase, a new 'reply_to' column is derived from the 'parent_id' field to classify comments within the conversation thread. This column captures the first two characters of 'parent_id', distinguishing top-level comments directed at the submission ('T3') from those replying to other comments ('T1'). The 'reply_to' column is integral to upcoming analyses, where it will enable a detailed examination of comment lengths and patterns, segmented by their position in the discussion hierarchy.
+```{python}
+#| eval: false
+# Create a new column 'reply_to' with the first two characters from 'parent_id'
+comments_df = comments_df.withColumn("reply_to", substring(col("parent_id"), 1, 2))
+comments_df = comments_df.filter(col("subreddit") == "mbti")
+```
+
+### 2.3 Final Comment Data
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/comment_head.csv")
+md = tabulate(df.head(2), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+
+## 3. External Data
+
+### 3.1 PersonalityPost dataset
+
+The project taps into a comprehensive Reddit dataset to explore the vast array of conversations about the Myers-Briggs Type Indicator (MBTI) within the online community. Although the dataset sheds light on the general topics that captivate those interested in MBTI, it stops short of linking the users' posts to their specific MBTI types due to the absence of such personal data.
+
+To address this limitation, an auxiliary dataset from the [PersonalityCafe forum](https://www.personalitycafe.com/login/), which is abundant in self-declared MBTI types and the users’ written content, has been integrated.
+
+The PersonalityCafe dataset is extensive, featuring over 8,600 records. Each entry comprises:
+
+- The participant's four-letter MBTI type.
+- A collection of the individual's most recent 50 posts, with each one separated by a triplet of pipe characters ("|||").
+
+This combined dataset provides a refined lens for analyzing the relationship between MBTI types and the distinct topics they discuss.
+
+#### Preliminary Cleaning
+
+The preliminary data cleaning process involves importing the MBTI dataset and segmenting concatenated posts into distinct records. Each post, separated by the "|||" delimiter, is extracted and mapped to the respective MBTI type, creating an expanded DataFrame. This step ensures the dataset is well-organized and primed for further analysis.
+
+```{python}
+#| eval: false
+import pandas as pd
+df = pd.read_csv('./data/csv/mbti_post.csv')
+
+# extract post for each personality
+# A section of each of the last 50 things they have posted (Each entry separated by "|||" (3 pipe characters))
+
+# Create a new DataFrame for the expanded posts
+posts_expanded = pd.DataFrame(columns=['type', 'post'])
+
+# Loop over the rows and split the posts, then append to the new DataFrame
+for index, row in df.iterrows():
+    # Split the posts into a list using the "|||" separator
+    posts = row['posts'].split('|||')
+    # Create a temporary DataFrame with the split posts and the corresponding type
+    temp_df = pd.DataFrame({'type': row['type'], 'post': posts})
+    # Append the temporary DataFrame to the expanded DataFrame
+    posts_expanded = pd.concat([posts_expanded, temp_df], ignore_index=True)
+```
+
+#### Final PersonalityPost Data
+
+```{python}
+import pandas as pd
+# check the dataframe
+posts_expanded = pd.read_csv('../data/csv/clean_post.csv')
+posts_expanded.head()
+```
+
+### 3.2 Health Condition Personality dataset
+
+Occupational back pain is a well-known condition that commonly affects the working population, resulting in disability, health care utilization, and significant socioeconomic burden. Although the causes of occupational pain remain largely unresolved, there is anecdotal evidence that personality and posture contribute to long-term pain management.
+
+Therefore, when we study MBTI personality types, we can conduct some research on health issues extended by MBTI to confirm some fresh ideas. In this regard, we conducted EDA from this Kaggle dataset [Health Condition Personality dataset](https://www.kaggle.com/datasets/dhanasekarjaisankar/correlation-between-posture-personality-trait) to try to find the correlation between them.
+
+The dimensions of this original data are (97, 20). Although the data volume is small, after looking at the raw data, we can find that there are many directions that can be explored. Therefore, we decided to explore and model EDA and part of Machine learning on this data.
+
+About the data
+
+- The results from the personality inventory (MBTI) came in the form of a combination of letters [Extraversion, Introversion, Sensing, Intuition, Thinking, Feeling, Judging, and Perceiving], and numbers, 1–26.
+
+- The pain scale data consisted of a number between 0(low) to 10 (high).
+
+- Posture - ideal posture (A), kyphosis-lordosis (B), flat back (C), sway-back (D)
+
+
+#### Health Condition Cleaning
+
+During the cleaning process, we will find that the data has too many pain details, which is not conducive to analysis, so we merge the four columns about the degree of pain and create a new 'SUM PAIN' column. Use this column to create a unified pain rating for the body. 
+
+The second is about posture classification, mapping the original meaning instead of expressing it as A, B, C, and D. In this case, the EDA part will be more reader-friendly.
+
+```{python}
+
+mbti_health_df = pd.read_csv("../data/csv/mbti_health.csv")
+# create a new column to sum the pain of each people.
+mbti_health_df['SUM PAIN'] = mbti_health_df[['PAIN 1', 'PAIN 2', 'PAIN 3', 'PAIN 4']].sum(axis=1)
+
+## bese on the data describtion, A,B,C,D represent the posture conditions below
+posture_conditions = {
+    'A': 'Ideal posture',
+    'B': 'Kyphosis-lordosis',
+    'C': 'Flat back',
+    'D': 'Sway-back'
+}
+mbti_health_df['POSTURE DETAIL'] = mbti_health_df['POSTURE'].map(posture_conditions)
+```
+
+#### Final Health-MBTI Data
+
+```{python}
+mbti_health_df.head()
+```
+
+
+
+## 4. Cleaned Data Columns
+::: {layout-ncol=2}
+![Comment Data Columns](../data/plots/comment.png)
+
+![Submission Data Columns](../data/plots/sub.png)
+:::
+
+
+
+# EDA Topics 1: Overview of MBTI Conversations
+
+> - **Business Goal:** Gain insights into the engagement levels within the MBTI subreddit community by analyzing the volume and intensity of discussions over the last two years. Identify the most captivating topics and explore the depth of interactions through the length of responses.
+> - **Technical Proposal:**
+>   - Query the dataset to calculate the total number of posts over the past two years. Break down the post count yearly to discern any trends in volume.
+>   - Apply sorting algorithms to organize posts by the number of comments received. Isolate and detail the top 10 titles that garnered the most community interaction.
+>   - Introduce a "word_count" column derived from splitting titles and comments by spaces and tallying the resulting words.
+>    - Construct and analyze the distribution of word counts for both submissions and comments to determine the general length and depth of community responses.
+
+
+The dataset reveals a significant engagement with MBTI-related topics, amassing 119,374 posts from January 2021 to March 2023. A yearly breakdown shows a slightly increasing trend, with 2021 accounting for 53,116 posts, 2022 rising to 55,110, and the first three months of 2023 already at 11,148 posts. A closer inspection prioritizing discussions by comment volume highlights the ten most active threads. The summary table sorts these by the number of comments, and it becomes evident that none of the top ten submissions are tied to a specific MBTI type, as all are labeled 'general'. This suggests that the most engaging discussions within the MBTI subreddit may revolve around broader, inclusive topics rather than type-specific content.
+
+```{python}
+#| eval: false
+# Load data
+sub_load = spark.read.parquet(f"{workspace_wasbs_base_url}/mbti_submission.parquet")
+
+# Total count
+sub_load.count()
+
+# Count by year
+sub_load.groupBy("submission_year").count().show()
+
+from pyspark.sql import functions as F
+
+# Top 10 submissions information
+top_10_submissions = (sub_load
+                      .orderBy(F.col("num_comments").desc())  # Sort by num_comments in descending order
+                      .select("submission_title", "num_comments", "submission_year", "submission_month","mbti_type_related")  # Select the required columns
+                      .limit(10))  # Limit to top 10
+```
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/top_10_submissions.csv")
+md = tabulate(df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+### 1.1 Deal with the large submission and comment data into count of each length using PySpark
+As the submission and comment data is too large to be loaded into pandas dataframe, we use PySpark to deal with the data. We first load the data into PySpark dataframe and then we count the length of each submission title and comment and then we count the number of each length of the submission title and comment. We save the length counts of submission title and comment to csv file for later use.
+
+```{python}
+#| eval: false
+# Launch spark environment and set up data configuration
+spark
+workspace_default_storage_account = "group10astorage46582e02e"
+workspace_default_container = "azureml-blobstore-e8a18b52-3288-4d1f-9f32-d5a9249c2c0e"
+workspace_wasbs_base_url = (f"wasbs://{workspace_default_container}@{workspace_default_storage_account}.blob.core.windows.net/")
+### Reading in single submission parquet file
+sub_load = spark.read.parquet(f"{workspace_wasbs_base_url}/mbti_submission.parquet")
+sub_load.printSchema()
+from pyspark.sql.functions import length
+#get the title length column
+df_with_length = sub_load.withColumn('title_length', length('submission_title'))
+df_with_length.show(5)
+# get the submission title length counts 
+length_counts = df_with_length.groupBy('title_length').count().sort('title_length')
+#save the length counts file to csv file
+length_counts.toPandas().to_csv('../data/submission_title_length_counts.csv', header=True)
+# read comment parquet file
+comment_load = spark.read.parquet(f"{workspace_wasbs_base_url}/mbti_comments.parquet")
+#print the comment_load schema
+comment_load.printSchema()
+comment_load.show(5)
+### comment length distribution
+get the comment length
+comment_with_length = comment_load.withColumn('comment_length', length('comment_text'))
+#### Split the comment to t1 and t3
+comment_t3 = comment_with_length.filter(comment_with_length['reply_to'] == 't3')
+comment_t1 = comment_with_length.filter(comment_with_length['reply_to'] == 't1')
+#get the length count of t3 comments
+length_counts_comment_t3 = comment_t3.groupBy('comment_length').count().sort('comment_length')
+#save the length counts of t3 comment to csv file
+length_counts_comment_t3.toPandas().to_csv('../data/comments_t3_length_counts.csv', header=True)
+# get length count of t1 comments
+length_counts_comment_t1= comment_t1.groupBy('comment_length').count().sort('comment_length')
+#save the length counts of t1 comment to csv
+length_counts_comment_t1.toPandas().to_csv('../data/comments_t1_length_counts.csv', header=True)
+
+```
+
+```{python}
+#| echo: false
+import pandas as pd
+import plotly.figure_factory as ff
+```
+
+```{python}
+#| echo: false
+#| eval: false
+submissions = pd.read_csv("./data/submission_title_length_counts.csv")
+# as the data contains count of each length, we need to expand the data to have one row for each title length to get the distribution plot
+title_lengths = [title_length for title_length, count in zip(submissions['title_length'], submissions['count']) for _ in range(count)]
+```
+
+```{python}
+#| eval: false
+#| echo: false
+comment_t1 = pd.read_csv("./data/comments_t1_length_counts.csv")
+# As we only want to discuss the comments with less than 1000 words, so we filter the comments data to only contain comments with less than 1000 words
+comment_t1 = comment_t1[comment_t1['comment_length'] < 1000]
+# as the data contains count of each length, we need to expand the data to have one row for each comment length to get the distribution plot
+comment_t1_lengths = [comment_length for comment_length, count in zip(comment_t1['comment_length'], comment_t1['count']) for _ in range(count)]
+```
+
+```{python}
+#| eval: false
+#| echo: false
+# same data transformation for t3 comments
+comment_t3 = pd.read_csv("./data/comments_t3_length_counts.csv")
+comment_t3 = comment_t3[comment_t3['comment_length'] < 1000]
+comment_t3_lengths = [comment_length for comment_length, count in zip(comment_t3['comment_length'], comment_t3['count']) for _ in range(count)]
+```
+
+
+### 1.2 Distribution of submission title lengths
+In order to know the overall distribution of submission title lengths, we first plot the distribution of the lengths of the submission title of the entire dataset.
+
+```{python}
+#| eval: false
+import random
+group_size = 10
+max_length = 312  # Maximum length
+
+
+num_groups = (max_length // group_size) + 1
+
+# Create a list of lists to store lengths in each group
+grouped_data = [[] for _ in range(num_groups)]
+
+# Place the lengths into their respective groups
+for len_val in title_lengths:
+    group_index = len_val // group_size
+    grouped_data[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data = []
+
+# Get a 10% random sample from each group
+for group in grouped_data:
+    sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+    sampled_data.extend(random.sample(group, sample_size))
+
+# Create a distribution plot using Plotly
+fig = ff.create_distplot([sampled_data], ['Submission Title'], bin_size=5)
+fig.update_layout(
+    title='Submission Title Length Distribution',
+    xaxis_title='Length of Submission Title',
+    yaxis_title='Density'
+)
+fig.show()
+```
+
+![Submission Title Length Distribution](../data/plots/submission_title_length.png)
+
+As the plot show, we can see that the distribution of the submission title length is right skewed, which means that most of the submission title length is short. And the distribution is also unimodal, which means that there is only one peak in the distribution. The peak is around 30 words, which means that most of the submission title length is around 30 words.
+
+### 1.3 Plot the length distribution of comments of T1 and T3 level.
+As T1 and T3 comments have too many data points, in order to get the distribution plot, we split all the comments length into different groups. The length lies in the groups with longer than 1000 words only take up a small proportion, so we only consider the comments length with less than 1000 words.
+
+```{python}
+#| eval: false
+group_size = 10 # Group size
+max_length = 999  # Maximum length
+
+# Calculate the number of groups
+num_groups = (max_length // group_size) + 1
+
+# Create a list of lists to store lengths in each group
+grouped_data = [[] for _ in range(num_groups)]
+
+# Place the lengths into their respective groups
+for len_val in comment_t1_lengths:
+    group_index = min(len_val // group_size, num_groups - 1)  # Ensure the index doesn't exceed the range
+    grouped_data[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data = []
+
+# Get a 10% random sample from each group
+for group in grouped_data:
+    if len(group) > 0:
+        sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+        sample_size = min(sample_size, len(group))  # Use the minimum of 10% sample or group size
+        sampled_data.extend(random.sample(group, sample_size))
+
+ # Create a list of lists to store lengths in each group
+grouped_data_t3 = [[] for _ in range(num_groups)]           
+# Place the lengths into their respective groups
+for len_val in comment_t3_lengths:
+    group_index = min(len_val // group_size, num_groups - 1)  # Ensure the index doesn't exceed the range
+    grouped_data_t3[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data_t3 = []
+
+# Get a 10% random sample from each group
+for group in grouped_data_t3:
+    if len(group) > 0:
+        sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+        sample_size = min(sample_size, len(group))  # Use the minimum of 10% sample or group size
+        sampled_data_t3.extend(random.sample(group, sample_size))
+```
+
+```{python}
+#| eval: false
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+# Assuming sampled_data and sampled_data_t3 are your data arrays
+
+# Create subplots
+fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, sharex=True,figsize=(8, 6))
+ax1.hist(sampled_data, bins=50, color=(0.2, 0.7, 0.4, 0.7), alpha=0.7,density=True)
+sns.kdeplot(sampled_data, color=(0.2, 0.7, 0.4), ax=ax1)
+ax1.set_title('T1 Comment Length Distribution Plot')
+ax1.set_xlabel('Length')
+ax1.set_ylabel('Frequency')
+
+# Plot histogram for Comment T3
+ax2.hist(sampled_data_t3, bins=50, color=(0.5, 0, 0.5, 0.7), alpha=0.7,density=True)
+sns.kdeplot(sampled_data_t3, color=(0.5, 0, 0.5), ax=ax2)
+ax2.set_title('T3 Comment Length Distribution Plot')
+ax2.set_xlabel('Length')
+ax2.set_ylabel('Frequency')
+
+# Adjust layout
+plt.tight_layout()
+
+# Show the combined plot
+plt.savefig("Users/xl659/fall-2023-reddit-project-team-10/data/plots/all_comments_length_distribution.png")
+plt.show()
+```
+
+
+![comment length distribution](../data/plots/all_comments_length_distribution.png)
+
+As for the comments length, T3 comments mean the direct comments to the submission and T1 comments mean the comments to the T3 comments. As the plot shows, we can see that the distribution of the T3 comments length is right skewed, which means that most of the T3 comments length is short. And the distribution is also unimodal, which means that there is only one peak in the distribution. The peak is around 10 words, which means that most of the T3 comments length is around 10 words. As for the T1 comments, the distribution is also right skewed and unimodal, but the peak is around 10 words, which means that most of the T1 comments length is around 10 words. And the distribution of T1 comments length is similar right skewed as the distribution of T3 comments length. We can infer that all the comments tend to be short.
+
+
+
+# EDA Topics 2: MBTI Engagement Analysis
+
+> - **Business Goal:** Determine which of the 16 personality types garners the most discussion topics (submissions) and which type elicits the most engagement through replies (comments). Also, find out the main content of the most replied-to post for each personality type. 
+> - **Technical Proposal:** For each submission title, employ pattern matching to identify mentions of any MBTI personality types (e.g., ESTJ, ISTJ, ENFP, etc.). Create a new column, "mbti_type_related", to label the relevant personality type associated with the post. If no specific type is discerned in the title, label it as "general" under the "mbti_type_related" column. Then, group by the "mbti_type_related" column and:
+>     - Count the total number of submissions per type to determine the most frequently discussed personality type.
+>     - Sum up the comments to find out which personality type receives the most engagement through replies.
+>     - Sort by the number of comments in descending order to identify the most engaged post for each personality type, capturing its core content or theme for reference.
+
+Using Spark SQL, we processed a dataset to group submissions by MBTI type and derived summary statistics: the total count of submissions per type, average comments, and average score, also identifying the most discussed submission title for each type. From the findings, INFPs-related had the most submissions with 2,251 posts, whereas ESFJs-related had the least at 252. INTJ-related had the highest average score of 52.27, suggesting those posts were particularly well-received. The most discussed titles, such as "What are INFP males like?" for INFP-related posts and "ESTP be stealin all the girls for themselves" for ESTPs-related posts, indicate the community's engagement in conversations that reflect upon their own and others' MBTI traits. The output table summarizes this data for the top 16 MBTI types by post count, offering insights into the activity and interests of different personality groups within the community.
+
+```{python}
+#| eval: false
+submission_df.createOrReplaceTempView("submissions")
+submission_df.cache()
+task1 = spark.sql("""
+    WITH RankedSubmissions AS (
+        SELECT id, 
+               mbti_type_related, 
+               submission_title,
+               num_comments, 
+               rank() OVER (PARTITION BY mbti_type_related ORDER BY num_comments DESC) as rank
+        FROM submissions
+    ),
+    TopTitle AS (
+        SELECT mbti_type_related, submission_title as top_title
+        FROM RankedSubmissions
+        WHERE rank = 1
+    ),
+    GroupByStat AS (
+        SELECT s.mbti_type_related, 
+        count(s.submission_title) as num_of_posts, 
+        round(avg(s.num_comments),2) as avg_comments,
+        round(avg(s.submission_score),2) as avg_score
+        FROM submissions s 
+        GROUP BY s.mbti_type_related
+    )
+    SELECT g.mbti_type_related, g.num_of_posts,g.avg_comments,g.avg_score,t.top_title
+    FROM GroupByStat g join TopTitle t on g.mbti_type_related = t.mbti_type_related
+    WHERE g.mbti_type_related <> 'general' and g.mbti_type_related NOT LIKE '%,%'
+    ORDER BY num_of_posts DESC
+    LIMIT 16
+    """)
+task1.show()
+```
+```{python}
+#| eval: true
+#| echo: false
+mbti_groupby_df = pd.read_csv("../data/csv/mbti_groupby_stat.csv")
+md = tabulate(mbti_groupby_df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+```{python}
+#| eval: true
+#| echo: false
+#sort the group by df
+mbti_groupby_df_sorted = mbti_groupby_df.sort_values(by='num_of_posts', ascending=True)
+# Calculating percentage for each MBTI type
+total_posts = mbti_groupby_df_sorted['num_of_posts'].sum()
+mbti_groupby_df_sorted['percentage'] = (mbti_groupby_df_sorted['num_of_posts'] / total_posts) * 100
+```
+
+```{python}
+# Importing necessary libraries
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# Creating subplots: one for the bar chart and one for the line plots
+fig = make_subplots(rows=1, cols=2, shared_yaxes=True, 
+                    subplot_titles=('Percentage of Posts', 'Avg Comments and Avg Score'),
+                    column_widths=[0.7, 0.3],
+                    specs=[[{}, {}]],)
+
+# Adding bar chart for the number of posts
+fig.add_trace(go.Bar(
+    x=mbti_groupby_df_sorted['percentage'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    orientation='h',
+    name='Percentage of Posts',
+    text=mbti_groupby_df_sorted['percentage'].apply(lambda x: f'{x:.2f}%'),  # Displaying percentage as text
+    hovertext=mbti_groupby_df_sorted['top_title'],  # This will appear when hovering over the bars
+    marker=dict(
+        color='rgba(50, 171, 96, 0.6)',
+        line=dict(
+            color='rgba(50, 171, 96, 1.0)',
+            width=1),
+    ),
+), 1, 1)
+# Updating the traces to include the hover text and titles
+fig.update_traces(texttemplate='%{text}', textposition='inside',
+                  hoverinfo='y+x+text', 
+                  hovertemplate='MBTI Type: %{y}<br>Percentage of Posts: %{x:.2f}%<br>Top Title: %{hovertext}')
+
+
+# Adding line plot for the average comments
+fig.add_trace(go.Scatter(
+    x=mbti_groupby_df_sorted['avg_comments'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    mode='lines+markers',
+    name='Avg Comments',
+    marker=dict(color='rgba(255, 127, 14, 0.9)'),
+), 1, 2)
+
+# Adding line plot for the average score
+fig.add_trace(go.Scatter(
+    x=mbti_groupby_df_sorted['avg_score'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    mode='lines+markers',
+    name='Avg Score',
+    marker=dict(color='rgba(128, 0, 128, 0.9)'),
+), 1, 2)
+# Updating layout of the plot
+fig.update_layout(
+    title=dict(
+        text='MBTI Reddit Posts Analysis',
+        font=dict(
+            size=20,  # Adjusting the font size
+        )
+    ),
+    yaxis=dict(title='MBTI Types'),
+    xaxis=dict(title='Percentage of Posts'),
+    xaxis2=dict(title='Values'),
+    autosize=True,
+    width=900,
+    height=800,
+    margin=dict(l=100, r=100, b=100, t=100),
+    template="plotly_white",
+    shapes=[
+        dict(
+            type='line',
+            xref='paper', yref='paper',
+            x0=0.64, y0=0,
+            x1=0.64, y1=1,
+            line=dict(color='Black', width=1.5)
+        )
+    ]
+)
+
+#fig.write_html("../data/plots/interactive_reddit_mbti_posts_analysis.html")
+#fig.write_image("../data/plots/static_reddit_mbti_posts_analysis.png")   
+
+# Show the plot
+fig.show()
+```
+
+Bar chart (left): This chart shows Percent of Posts by MBTI type. According to the chart:
+
+- INFP type posts have the highest proportion at 13.54%.
+- The proportions of INTJ, INTP, and INFJ types are also relatively high, ranging from 10.55% to 12.47%.
+- ESFJ types have the lowest percentage of jobs at 1.52%.
+
+This suggests that INFPs may be the most popular personality type to initiate discussions on Reddit. It can be seen from the overall bar chart that in the average proportion of posts, person I likes to post more than person E. This may be related to my habit of surfing the Internet due to my introversion. And people I also prefer to explore the inner world, so they are more interested in discussions about the inner world and personality traits.
+
+Line chart (right): This chart shows "Average number of comments and average score by MBTI type," where the two lines represent the average number of comments and average score of posts for each MBTI type. According to the chart:
+
+- The MBTI type with the highest average number of comments on a post is INTJ, and the MBTI type with the highest average post score is also INTJ. This shows that in the Reddit community, discussion posts about INTJ are more likely to gain participation and appreciation than other types. Maybe it's because INTJ is the most mysterious and difficult to understand personality type.
+
+- The MBTI type with the lowest average post comments is the ISFJ, while the MBTI type with the lowest average post score is the ENFJ. This shows that there are less discussions about ISFJs in the Reddit community, possibly because ISFJs don’t like to discuss their mbti online. ENFJ's discussion posts should be less likely to be appreciated than other types, and their recognition is not high.
+
+
+# EDA Topics 3: Time-Series Analysis
+
+> - **Business Goal:** Track and visualize the evolution of discussions around MBTI to understand changing trends, peaks of interest, and any cyclic patterns over the data coverage period.
+> - **Technical Proposal:** 
+>     - Query the dataset to summarize the total number of posts and break down the post count, comment count, and track the average score monthly to understand the trends.
+>     - Visualize the changing monthly trends and apply time-series analysis to detect recurring patterns and notable deviations of MBTI discussions over the past two years.
+>     - Summarize key trends and patterns with a focus on significant peaks and troughs.
+
+
+Utilizing Apache Spark for efficient data processing, a time-series analysis was conducted on the MBTI submissions dataset. The Spark SQL query aggregated the data by year and month, calculating the count of post titles, the average number of comments, and the average submission score to discern monthly trends. This process aimed to reveal the ebb and flow in the popularity and engagement levels of MBTI discussions, tracking changes and identifying any cyclical patterns within the timeframe of the past two years.
+
+
+```{python}
+#| eval: false
+task2 = spark.sql("""
+    SELECT submission_year,submission_month,count(submission_title),round(avg(num_comments),2) as avg_num_comments,round(avg(submission_score),2) as avg_score
+    FROM submissions
+    GROUP BY submission_year, submission_month
+    ORDER BY submission_year, submission_month
+""")
+```
+
+```{python}
+#| eval: true
+#| echo: false
+df = pd.read_csv("../data/csv/time-series.csv")
+md = tabulate(df.head(6), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+Following the data processing with Apache Spark, the analyzed MBTI submission trends were visualized using Plotly, an advanced visualization library. This resulted in an interactive chart that captures the dynamics of monthly submission counts, average number of comments, and average scores over a period stretching from January 2021 to April 2023. The dual-axis graph presents a clear visual narrative, with the upper panel displaying the fluctuation in submission counts and the lower panel juxtaposing the average comments and scores. The interactivity of the Plotly graph allows for an immersive exploration of the data, facilitating an intuitive understanding of the trends, peaks, and troughs in the MBTI topic discussions on Reddit.
+
+```{python}
+# load the preprocessed data
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import kaleido
+
+# Create subplots
+fig = make_subplots(rows=2, cols=1, subplot_titles=("Monthly Submission Counts", "Average Comments and Scores"))
+
+# Line plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['count(submission_title)'], 
+               name='Submission Counts', 
+               mode='lines+markers'),
+    row=1, col=1
+)
+
+# Bar plot
+fig.add_trace(
+    go.Bar(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+           y=df['avg_num_comments'], 
+           name='Average Number of Comments'),
+    row=2, col=1
+)
+# Scatter plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['avg_score'], 
+               name='Average Score', 
+               mode='markers'),
+    row=2, col=1
+)
+
+# Update xaxis
+fig.update_xaxes(title_text="Date", row=1, col=1)
+fig.update_xaxes(title_text="Date", row=2, col=1)
+
+# Update yaxis 
+fig.update_yaxes(title_text="Submission Counts", row=1, col=1)
+fig.update_yaxes(title_text="Average Values", row=2, col=1)
+
+# Update title and layout
+fig.update_layout(
+    title_text="Reddit MBTI Topic Submission Trends",
+    title_x=0.45,  # This centers the title
+    showlegend=True,
+
+)
+fig.update_layout(
+    title=dict(
+        font=dict(
+            size=20, # Adjusting the font size
+        )
+    )
+)
+
+# Show the figure
+fig.show()
+
+```
+
+
+The visualization demonstrates that the volume of monthly submissions experiences slight fluctuations but does not exhibit a significant long-term upward or downward trend, suggesting a steady level of interest in MBTI topics over the analyzed period.
+
+Notably, there is an observable periodicity in submission counts with peaks suggesting heightened interest at regular intervals, which could correspond to specific events or seasonal patterns. For instance, there appears to be a recurring peak around the start of each year, which may indicate a surge in interest in MBTI discussions as people reflect on their personalities and set new year resolutions.
+
+The lower section of the visualization, highlighting the average comments and scores, indicates that while submission counts remain relatively stable, user engagement—as evidenced by the average number of comments and the average score per post—varies more significantly. Specific months show heightened engagement levels, with more comments and higher scores, potentially reflecting the community's increased interest in particular topics or discussions during those times.
+
+
+# EDA Topics 4: Posting Behavior Analysis(External Data)
+
+> - **Business Goal:** Understand the posting behavior and distribution across different MBTI personality types by analyzing the volume and average length of posts for each type as well as along the four MBTI dichotomies: Introversion/Extroversion, Intuition/Sensing, Thinking/Feeling, Judging/Perceiving.
+> - **Technical Proposal:**
+>    - Introduce an external dataset containing posts and the user’s MBTI types. 
+>    - Parse the dataset to split posts, categorize them by MBTI type, and generate a summary table detailing the total posts and average post length for each of the 16 MBTI personality types.
+>    - Consolidates the data based on the four MBTI dichotomies (I/E, N/S, T/F, J/P), showing the number of posts and average post length for each trait.
+>    - Visualize the data to extract insights on posting patterns, such as which MBTI types are more active or which types tend to write longer posts.
+>    - Determine if certain dichotomies correlate with more frequent or more verbose posting behaviors.
+>    - Summarize the findings in a comprehensive report that details the distinctive posting features of the MBTI types and dichotomies.
+
+## 4.1 Posting Behavior Analysis for 16 MBTI Personality Types
+
+After the initial data structuring, the dataset was grouped by the MBTI personality type, allowing for the calculation of the total number of posts per type, the average length of posts, and the relative percentage of posts each type represents in the dataset. The 'number_of_posts' column was aggregated for count, and a lambda function was applied to calculate the 'average_length_of_posts'. The resulting 'percentage_of_posts' column was then derived by dividing the count of posts per type by the total number of posts, offering a proportionate view of the data. This organized summary dataframe was subsequently sorted by the number of posts in descending order, enabling a clear, quantitative comparison across the 16 MBTI personality types and preparing the data for insightful analysis and visualization.
+
+```{python}
+#| eval: false
+# Group by the 'type' and then perform the aggregation
+summary_df = posts_expanded.groupby('type').agg(
+    number_of_posts=pd.NamedAgg(column='post', aggfunc='count'),
+    average_length_of_posts=pd.NamedAgg(column='post', aggfunc=lambda x: x.str.len().mean())
+).reset_index()
+
+# add percentage
+total_posts = summary_df['number_of_posts'].sum()
+summary_df['percentage_of_posts'] = summary_df['number_of_posts'] / total_posts
+
+# sort the data
+summary_df = summary_df.sort_values(by='number_of_posts', ascending=False).reset_index(drop=True)
+
+# check
+summary_df
+# .to_csv('../data/csv/mbti_post_summary_df.csv')
+```
+
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+summary_df = pd.read_csv("../data/csv/mbti_post_summary_df.csv")
+md = tabulate(summary_df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+Following the data processing, the MBTI posts analysis was rendered into an interactive visualization using Plotly. This visualization elucidates the distribution of the number of posts and the average length of posts per MBTI type, covering the entire dataset. Bars denote the count of posts, while the line chart overlays the average post length, providing a dual perspective on participation and post detail by type. The graphical representation clearly contrasts the varying levels of engagement among the different personality types and the depth of their interactions. Plotly's interactivity enriches the user experience, offering a hands-on approach to data discovery and a compelling illustration of the digital footprint of the MBTI community.
+
+
+```{python}
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+summary_df['average_length_of_posts'] = summary_df['average_length_of_posts'].round(2)
+summary_df['number_of_posts'] = summary_df['number_of_posts']
+
+# Create figure with secondary y-axis
+fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+# Add bar chart for number of posts with the specified colors and line properties
+fig.add_trace(
+    go.Bar(
+        x=summary_df['type'],
+        y=summary_df['number_of_posts'],
+        name='Number of Posts',
+        marker=dict(
+            color='rgba(50, 171, 96, 0.6)',
+            line=dict(
+                color='rgba(50, 171, 96, 1.0)',
+                width=1
+            ),
+        ),
+        hovertemplate='%{x}<br>Number of posts: %{y:.f}<extra></extra>'
+    ),
+    secondary_y=False,
+)
+
+# Add line chart for average length of posts with the specified marker color
+fig.add_trace(
+    go.Scatter(
+        x=summary_df['type'],
+        y=summary_df['average_length_of_posts'],
+        name='Average Length of Posts',
+        mode='lines+markers',
+        text=summary_df['average_length_of_posts'],
+        marker=dict(color='rgba(128, 0, 128, 0.9)'),
+        line=dict(color='rgba(128, 0, 128, 0.9)'),  # Set the line color here
+        hovertemplate='%{x}<br>Avg length of posts: %{y:.2f}<extra></extra>'
+    ),
+    secondary_y=True,
+)
+
+# Add figure title
+fig.update_layout(
+    title_text="MBTI Posts Analysis: Number of Posts and Average Length",
+    title_x=0.45,  # This centers the title
+)
+fig.update_layout(
+    title=dict(
+        font=dict(
+            size=20, # Adjusting the font size
+        )
+    )
+)
+
+# Set x-axis title
+fig.update_xaxes(title_text="MBTI Type")
+
+# Set y-axes titles
+fig.update_yaxes(title_text="<b>Number of Posts</b>", secondary_y=False)
+fig.update_yaxes(title_text="<b>Average Post Length</b>", secondary_y=True)
+
+# Show the figure
+fig.show()
+
+```
+
+The interactive chart provides significant insights into the posting behavior among different MBTI personality types on the platform. It reveals that some personality types are more active in posting than others. For instance, types such as INFP and INTJ have a noticeably higher number of posts, indicating that individuals with these personality types may be more inclined to engage in online forums or are more represented in the dataset.
+
+Additionally, the visualization shows that while some types like INTJ, INFJ, and INTP have a high volume of posts, the average length of these posts varies, with INTP types tending to write longer posts on average. This could suggest that although INTJs and INFJs are prolific in terms of post numbers, INTPs may delve into more in-depth discussions or provide more detailed contributions to the conversations.
+
+Conversely, types like ESFJ and ESTJ have fewer posts and shorter average post lengths, suggesting these personality types might prefer to engage less frequently and more concisely on the platform or are less represented in the sampled data.
+
+These observations are instrumental for understanding how different MBTI personality types participate in online discussions. 
+
+## 4.2 Posting Behavior Analysis for 4 MBTI Dichotomies (I/E, N/S, T/F, J/P)
+
+The analysis of posting behavior across the 16 distinct MBTI personality types has uncovered intriguing patterns in how different personalities engage in online discourse. Building upon these findings, the focus now shifts to dissecting the four core dimensions that constitute these personality types: Introversion (I) versus Extroversion (E), Intuition (N) versus Sensing (S), Thinking (T) versus Feeling (F), and Judging (J) versus Perceiving (P). By examining these dichotomies, the aim is to distill the essence of how each cognitive preference influences posting frequency and depth. This layered approach will allow for a more granular understanding of the behavioral tendencies that underlie each MBTI axis, providing a richer perspective on the interplay between personality and online interaction patterns.
+
+To delve deeper into the nuances of MBTI-related posting behaviors along the fundamental personality dichotomies, the original dataset are filtered and computed the relevant metrics for each MBTI axis. 
+
+```{python}
+#| eval: false
+# Function to calculate the number of posts and average length per MBTI axis
+def calculate_axis_metrics(posts, axis):
+    # Filter posts containing the specific axis
+    axis_posts = posts[posts['type'].str.contains(axis)]
+    # Calculate the number of posts and the average length
+    number_of_posts = axis_posts.shape[0]
+    average_length_of_posts = axis_posts['post'].str.len().mean()
+    return number_of_posts, average_length_of_posts
+
+# Define the MBTI axes
+axes = ['I', 'E', 'N', 'S', 'T', 'F', 'J', 'P']
+
+# Initialize a dictionary to hold summary data
+summary_data = {
+    'axis': [],
+    'number_of_posts': [],
+    'average_length_of_posts': [],
+    'percentage_of_posts': []
+}
+
+# Total number of posts
+total_posts = posts_expanded.shape[0]
+
+# Calculate the metrics for each axis and store in summary_data
+for axis in axes:
+    number_of_posts, avg_length = calculate_axis_metrics(posts_expanded, axis)
+    summary_data['axis'].append(axis)
+    summary_data['number_of_posts'].append(number_of_posts)
+    summary_data['average_length_of_posts'].append(avg_length)
+    summary_data['percentage_of_posts'].append((number_of_posts / total_posts) * 100)
+
+# Convert summary_data to a DataFrame
+summary_df = pd.DataFrame(summary_data)
+
+# Display the summary DataFrame
+summary_df
+# .to_csv('../data/csv/mbti_post_summary_df_4axes.csv')
+
+```
+
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+summary_df = pd.read_csv("../data/csv/mbti_post_summary_df_4axes.csv")
+md = tabulate(summary_df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+
+```{python}
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
+# Creating a function to extract values for each dichotomy pair
+def get_values_for_pair(axis1, axis2, column):
+    values = summary_df[summary_df['axis'].isin([axis1, axis2])][column].values
+    return [round(v, 2) for v in values]
+
+# Colors dictionary
+colors = {
+    'I': '#A4DEF9',
+    'E': '#3E68BD',
+    'N': '#8DDFB0',
+    'S': '#2C6E49',
+    'T': '#FFF4AB',
+    'F': '#FFB53E',
+    'J': '#E3D8F1',
+    'P': '#A9769E'
+}
+
+# Initialize subplots with shared x-axes and set the spacing here
+fig = make_subplots(
+    rows=2, 
+    cols=2, 
+    subplot_titles=(
+        'Introversion (I) vs Extroversion (E)',
+        'Intuition (N) vs Sensing (S)',
+        'Thinking (T) vs Feeling (F)',
+        'Judging (J) vs Perceiving (P)'
+    ),
+    specs=[[{"secondary_y": True}, {"secondary_y": True}],
+           [{"secondary_y": True}, {"secondary_y": True}]],
+    horizontal_spacing=0.17,  
+    vertical_spacing=0.1     
+)
+
+# Loop through each axis pair and add traces for number of posts only
+for i, (axis1, axis2) in enumerate([('I', 'E'), ('N', 'S'), ('T', 'F'), ('J', 'P')], start=1):
+    # Calculate row and col for subplot
+    row = (i-1) // 2 + 1
+    col = (i-1) % 2 + 1
+    
+    # Add bar trace for number of posts for axis1
+    fig.add_trace(go.Bar(
+        x=[axis1],
+        y=[get_values_for_pair(axis1, axis2, 'number_of_posts')[0]],
+        name=f'Number of Posts ({axis1})',
+        marker_color=colors[axis1]
+    ), row=row, col=col, secondary_y=False)
+    
+    # Add bar trace for number of posts for axis2
+    fig.add_trace(go.Bar(
+        x=[axis2],
+        y=[get_values_for_pair(axis1, axis2, 'number_of_posts')[1]],
+        name=f'Number of Posts ({axis2})',
+        marker_color=colors[axis2]
+    ), row=row, col=col, secondary_y=False)
+    
+    # The scatter trace for average length of posts is now removed
+
+# Update layout for a cleaner look
+fig.update_layout(
+    title_text='MBTI Dichotomy Comparison: Number of Posts',
+    height=800,
+    showlegend=False,
+    title_x=0.45,
+    barmode='group'
+)
+fig.update_layout(
+    title=dict(
+        font=dict(
+            size=20,
+        )
+    )
+)
+
+# Update y-axes titles for primary y-axes (number of posts)
+fig.update_yaxes(title_text='Number of Posts', secondary_y=False)
+
+# Show figure
+fig.show()
+
+
+```
+
+The visualization provides a comparative analysis of the MBTI dichotomies, offering valuable insights into the posting behaviors associated with each of the four dimensions.
+
+1. **Introversion (I) vs Extroversion (E)**: There is a notable prevalence of posts from introverted types, as indicated by the significantly higher number of posts under 'I' compared to 'E'. This suggests that introverted users are more active in posting on the platform or that they represent a larger portion of the posting population. Additionally, the average post length for 'I' is marginally higher than for 'E', implying that introverts might engage in more detailed or elaborate discussions.
+
+2. **Intuition (N) vs Sensing (S)**: The 'N' type dominates in both the number of posts and the average post length compared to 'S'. This could indicate that intuitive individuals are not only more represented but also tend to share more comprehensive posts, perhaps reflecting a preference for abstract or theoretical discussions typical of intuitive personality types.
+
+3. **Thinking (T) vs Feeling (F)**: The distribution here is quite balanced in terms of post count, with a slight edge to 'F' types. However, 'F' types appear to write longer posts on average than 'T' types, which could suggest that those with a feeling preference are more inclined to elaborate on their sentiments and values, or they engage in more narrative or expressive discussions.
+
+4. **Judging (J) vs Perceiving (P)**: The 'P' preference exhibits a higher number of posts and a slightly longer average post length than the 'J' preference. This might reflect a tendency for perceiving types to participate more frequently and with a bit more elaboration in online forums, possibly due to their more spontaneous and adaptable nature.
+
+
+
+# EDA Topics 5: Personality-Informed Health Profiles (External Data)
+
+> - **Business Goal:** Identify patterns in health-related data that correlate with MBTI personality types. The analysis is designed to identify trends in postural categories and pain levels across age groups to inform targeted health programs and interventions.
+> - **Technical Proposal:** 
+> - Individual pain indicators for each MBTI personality type were combined into a cumulative "SUM PAIN" measure to analyze overall pain trends. Postural data was divided into different categories, revealing posture-related health conditions in different MBTI signatures. The data were then grouped by MBTI type, and mean age and pain scores and type frequencies were calculated to identify important health patterns across personality groups.
+>    - Conduct a statistical analysis to explore the relationship between MBTI types and posture-related health outcomes, utilizing a heatmap to visualize the prevalence of certain postures across the MBTI spectrum. 
+>    - Employ a scatter plot analysis to examine the correlation between age, the frequency of reported pain, and MBTI types, highlighting the average pain levels with bubble sizes to indicate the frequency of each type.
+
+
+## 5.1 Correlation Between MBTI Personality Types and Postural Health
+
+This EDA forms part of a broader study aimed at discerning patterns between MBTI personality types and postural health. The EDA seeks to uncover whether certain postural categories, such as 'Flat back,' 'Ideal posture,' 'Kyphosis-lordosis,' and 'Sway-back,' are more prevalent within specific MBTI classifications. This investigation is structured to provide insights that could be pivotal in developing targeted health programs. By aggregating individual pain indicators into a comprehensive measure and categorizing postural data, the analysis facilitates a nuanced understanding of how postural health might correlate with personality type.
+
+```{python}
+#mbti_health_df = pd.read_csv("mbti_health.csv")
+md = tabulate(mbti_health_df.head(6), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+```{python}
+# Importing necessary packages
+import plotly.figure_factory as ff
+import pandas as pd
+
+# Creating a crosstab to get the frequency of each MBTI type for each posture category
+cross_tab = pd.crosstab(mbti_health_df['MBTI'], mbti_health_df['POSTURE DETAIL'])
+
+# Calculating the row-wise sum to use in percentage calculation
+row_sum = cross_tab.sum(axis=1)
+
+# Using broadcasting to calculate the percentage
+cross_tab_percentage = cross_tab.div(row_sum, axis=0)
+
+# Creating a heatmap using plotly
+
+fig = ff.create_annotated_heatmap(z=cross_tab_percentage.values,
+                x=cross_tab_percentage.columns.tolist(),
+                y=cross_tab_percentage.index.tolist(),
+                annotation_text=cross_tab_percentage.applymap("{:.2f}".format).values,
+                colorscale='YlGnBu',
+                )
+
+# Customize hover information
+fig.update_traces(
+    hovertemplate="<b>MBTI Type:</b> %{y}<br>" +
+                  "<b>Posture Category:</b> %{x}<br>" +
+                  "<b>Percentage:</b> %{z:.2f}<extra></extra>"  # Hide the trace name
+)
+
+fig.update_layout(
+    title=dict(
+        text='Heatmap of MBTI Types and Posture Categories (Percentage)',
+        x=0.5,  # This will center the title
+        xanchor='center',
+        font=dict(
+            size=19, # Adjusting the font size
+        )
+    ),
+    xaxis=dict(title='Posture Categories', side='bottom'),  
+    yaxis=dict(title='MBTI Types'),
+    coloraxis_colorbar=dict(
+        title='Percentage',  
+        x=1, 
+        xanchor='left', 
+    ),  
+    autosize=False,
+    width=855,
+    height=679
+)
+
+# Displaying the plot
+fig.show()
+```
+
+This heat map shows the association between different MBTI personality types and different postural problems. The shades of color in the heat map represent percentages, with darker colors representing higher percentages and lighter colors representing lower percentages.
+
+Each MBTI type corresponds to four posture problems: Flat back, Ideal posture, Kyphosis-lordosis, and Sway-back.
+
+From this chart, we can see:
+
+1. Among all the people who took this fitness test, ENFP individuals had the highest proportion in the "ideal posture" column, which means that compared to other MBTI types, ENFPs are more likely to have good posture.
+2. The proportion of ISFJ types in the "Flat Back" column is higher, which may indicate that ISFJ individuals may need to pay attention to improving the back curve in daily life to avoid problems caused by flat backs.
+3. The proportion of individuals of ISFP, INTJ and INFP types in the "hunchback-lumbar protrusion" column is relatively low, which indicates that individuals of these three types are less likely to have such postural problems.
+4. ISFP, ISTJ, INFP, and INFJ individuals have a higher proportion in the "forward leaning" column, which may mean that these four types of individuals need to pay attention to the position of the spine and pelvis and avoid long-term forward leaning postures.
+
+## 5.2 Age-Related Pain Trends Across MBTI Personality Types
+
+This scatter plot is an exploratory tool designed to delve into the interplay between age, pain levels, and MBTI personality types. By plotting the average age against reported pain intensities and using bubble sizes to represent the prevalence of each MBTI type, the visualization aims to surface any apparent trends or anomalies. The analysis is structured to facilitate the identification of age-related pain patterns within different personality types, providing a foundation for subsequent statistical examination and the potential development of personalized health interventions. This initial graphical representation sets the stage for a deeper investigation into how personality traits might influence the experience and reporting of pain across age groups.
+
+
+```{python}
+# Create the scatter plot
+import plotly.express as px
+color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+
+# Group the data by 'MBTI' and calculate the average count for each MBTI type
+mbti_grouped = mbti_health_df.groupby('MBTI').agg(
+    Avg_age=('AGE', 'mean'),
+    Avg_pain=('SUM PAIN', 'mean'),
+    Count=('MBTI', 'size')
+).reset_index()
+
+mbti_grouped['Avg_age'] = mbti_grouped['Avg_age'].round(2)
+mbti_grouped['Avg_pain'] = mbti_grouped['Avg_pain'].round(2)
+
+fig = px.scatter(mbti_grouped, y='Avg_pain', x='Avg_age', 
+                 size='Count', color='MBTI', 
+                 hover_name='MBTI', size_max=60,color_discrete_sequence=color_list)
+
+# Hide the legend
+fig.update_layout(showlegend=True)
+
+# Add MBTI type labels for each point on the scatterplot
+for index, row in mbti_grouped.iterrows():
+    fig.add_annotation(
+        y=row['Avg_pain'],
+        x=row['Avg_age'],
+        text=row['MBTI'],
+        showarrow=False,
+        yshift=12
+    )
+
+
+fig.update_layout(title=dict(
+        text='MBTI Types: Average Age vs PAIN with Sequency',
+        x=0.5,  # This will center the title
+        xanchor='center',
+        font=dict(
+            size=19, # Adjusting the font size
+        )
+    ),
+    xaxis=dict(title='Average Age'),  
+    yaxis=dict(title='Average Pain'),
+    )
+
+# Show the figure
+fig.show()
+```
+
+
+This bubble scatter plot shows the relationship between MBTI personality type, average age, and average pain level. The size of the bubble represents the frequency of that mbti.
+
+From this chart, we can observe:
+
+1. Types like ISTP and ESTJ show higher pain levels at older ages, possibly because this hints at underlying age-related health trends and personality type associations.
+2. INFJ and ENFJ show very high pain levels in the middle age group. This may be because people with the three characteristics of NF are more planned and are intuitive feeling individuals. They are so serious about their work that they sit down at their desk until the task is completed, so they often suffer from pain caused by incorrect posture.
+
+The analysis of these two EDA charts provides data support for formulating targeted health strategies and helps us better understand the connection between MBTI personality types and health problems.
+
+# Executive summary
+
+Our EDA project targeting the MBTI subreddit community achieved significant insights in two core areas:
+
+
+```{python}
+# load the preprocessed data
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import kaleido
+
+df = pd.read_csv("../data/csv/time-series.csv")
+
+# Create subplots
+fig = make_subplots(rows=2, cols=1, subplot_titles=("Monthly Submission Counts", "Average Comments and Scores"))
+
+# Line plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['count(submission_title)'], 
+               name='Submission Counts', 
+               mode='lines+markers'),
+    row=1, col=1
+)
+
+# Bar plot
+fig.add_trace(
+    go.Bar(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+           y=df['avg_num_comments'], 
+           name='Average Number of Comments'),
+    row=2, col=1
+)
+# Scatter plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['avg_score'], 
+               name='Average Score', 
+               mode='markers'),
+    row=2, col=1
+)
+
+# Update xaxis
+fig.update_xaxes(title_text="Date", row=1, col=1)
+fig.update_xaxes(title_text="Date", row=2, col=1)
+
+# Update yaxis 
+fig.update_yaxes(title_text="Submission Counts", row=1, col=1)
+fig.update_yaxes(title_text="Average Values", row=2, col=1)
+
+# Update title and layout
+fig.update_layout(
+    title_text="Reddit MBTI Topic Submission Trends",
+    title_x=0.45,  # This centers the title
+    showlegend=True,
+
+)
+fig.update_layout(
+    title=dict(
+        font=dict(
+            size=20, # Adjusting the font size
+        )
+    )
+)
+
+# Show the figure
+fig.show()
+
+```
+
+In conducting an EDA of Reddit MBTI topic submission trends, we noticed that over the past two years of data, there seems to be a spike in Submission counts at the beginning and end of the year. This could mean that people show a higher interest in discussing the MBTI as they reflect on their personality traits and make New Year's resolutions at the end of the year. Additionally, we found that from 2021 onwards, the average ratings decreased year on year. This may be due to the dramatic increase in the number of posts submitted, which leads to a decrease in the overall quality of posts. Therefore, Reddit needs to consider how to maintain or improve the quality of posts during the beginning and end of the year, when user interest in MBTI discussions is high, as well as when the number of posts spikes.
+
+
+```{python}
+mbti_groupby_df = pd.read_csv("../data/csv/mbti_groupby_stat.csv")
+#sort the group by df
+mbti_groupby_df_sorted = mbti_groupby_df.sort_values(by='num_of_posts', ascending=True)
+# Calculating percentage for each MBTI type
+total_posts = mbti_groupby_df_sorted['num_of_posts'].sum()
+mbti_groupby_df_sorted['percentage'] = (mbti_groupby_df_sorted['num_of_posts'] / total_posts) * 100
+# Importing necessary libraries
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# Creating subplots: one for the bar chart and one for the line plots
+fig = make_subplots(rows=1, cols=2, shared_yaxes=True, 
+                    subplot_titles=('Percentage of Posts', 'Avg Comments and Avg Score'),
+                    column_widths=[0.7, 0.3],
+                    specs=[[{}, {}]],)
+
+# Adding bar chart for the number of posts
+fig.add_trace(go.Bar(
+    x=mbti_groupby_df_sorted['percentage'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    orientation='h',
+    name='Percentage of Posts',
+    text=mbti_groupby_df_sorted['percentage'].apply(lambda x: f'{x:.2f}%'),  # Displaying percentage as text
+    hovertext=mbti_groupby_df_sorted['top_title'],  # This will appear when hovering over the bars
+    marker=dict(
+        color='rgba(50, 171, 96, 0.6)',
+        line=dict(
+            color='rgba(50, 171, 96, 1.0)',
+            width=1),
+    ),
+), 1, 1)
+# Updating the traces to include the hover text and titles
+fig.update_traces(texttemplate='%{text}', textposition='inside',
+                  hoverinfo='y+x+text', 
+                  hovertemplate='MBTI Type: %{y}<br>Percentage of Posts: %{x:.2f}%<br>Top Title: %{hovertext}')
+
+
+# Adding line plot for the average comments
+fig.add_trace(go.Scatter(
+    x=mbti_groupby_df_sorted['avg_comments'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    mode='lines+markers',
+    name='Avg Comments',
+    marker=dict(color='rgba(255, 127, 14, 0.9)'),
+), 1, 2)
+
+# Adding line plot for the average score
+fig.add_trace(go.Scatter(
+    x=mbti_groupby_df_sorted['avg_score'],
+    y=mbti_groupby_df_sorted['mbti_type_related'],
+    mode='lines+markers',
+    name='Avg Score',
+    marker=dict(color='rgba(128, 0, 128, 0.9)'),
+), 1, 2)
+# Updating layout of the plot
+fig.update_layout(
+    title=dict(
+        text='MBTI Reddit Posts Analysis',
+        font=dict(
+            size=20,  # Adjusting the font size
+        )
+    ),
+    yaxis=dict(title='MBTI Types'),
+    xaxis=dict(title='Percentage of Posts'),
+    xaxis2=dict(title='Values'),
+    autosize=True,
+    width=900,
+    height=800,
+    margin=dict(l=100, r=100, b=100, t=100),
+    template="plotly_white",
+    shapes=[
+        dict(
+            type='line',
+            xref='paper', yref='paper',
+            x0=0.64, y0=0,
+            x1=0.64, y1=1,
+            line=dict(color='Black', width=1.5)
+        )
+    ]
+)
+
+#fig.write_html("../data/plots/interactive_reddit_mbti_posts_analysis.html")
+#fig.write_image("../data/plots/static_reddit_mbti_posts_analysis.png")   
+
+# Show the plot
+fig.show()
+```
+
+In an EDA of posts on Reddit categorized by MBTI type, we found that IN** type users were particularly active, with their posts accounting for 47.38% of the total number of posts. This percentage stands out among the 16 MBTI types, showing that IN** type users are enthusiastic about discussing MBTI topics online. However, the difference between the average number of comments and the average rating was not significant across all 16 types. Notably, discussion posts about INTJ types in the Reddit community appeared to be more likely to garner engagement and appreciation, possibly because INTJ types are considered to be the most mysterious and difficult personality types to understand. In contrast, users of both ISFJ and ENFJ types seem to be less inclined to discuss their MBTI types online and their posts are less appreciated. This may be because **FJ types are more planned in their actions and are less inclined to engage in such discussions and likes.

@@ -1,0 +1,57 @@
+project: 
+  type: website
+  
+website: 
+  page-navigation: true
+  title: "Fall-2023-reddit-project-team-10" 
+  
+  page-footer:
+    right: "This page is built with [Quarto](https://quarto.org/)."
+    left: "&copy; 2023 Team 10, DSAN6000"
+    
+  sidebar:
+    logo: "imgs/logo1.png"
+    title: "Project Team 10"
+    pinned: true
+    align: center
+    tools: 
+      - icon: github
+        href: https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10
+        text: "GitHub Page"      
+
+    style: "docked"
+    search: true
+    collapse-level: 1
+    contents:
+      - href: index.qmd
+        text: Introduction
+      - href: eda.qmd
+        text: Exploratory Data Analysis
+      - href: nlp.qmd
+        text: Natural Language Processing
+      - href: ml.qmd
+        text: Machine Learning
+      - href: conclusion.qmd
+        text: Conclusions
+      - href: discussion.qmd
+        text: Feedback Discussion
+
+format:
+  html:
+    theme:
+      light: [cosmo, theme.scss] 
+      dark: [cosmo, theme-dark.scss]
+    code-copy: true
+    code-overflow: wrap
+    code-tools: true
+    toc: true
+    embed-resources: true
+    code-line-numbers: true
+    highlight-style: github
+    code-fold: true
+execute:
+  warning: false
+  
+filters:
+  - include-files.lua
+  - quarto

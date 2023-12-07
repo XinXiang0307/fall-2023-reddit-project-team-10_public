@@ -1,0 +1,229 @@
+---
+title: "Conclusion" 
+author:
+  - Project Team 10
+  - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
+---
+
+![](imgs/conclusion.jpg)
+
+
+# Project summary
+
+### 1.MBTI Mirror: Community Engagement Disposition Mapping (EDA)
+Through in-depth exploratory data analysis of post and comment data from the MBTI subreddit community, we discovered significant engagement changes and community activity trends. The analysis shows engagement patterns across different MBTI types, revealing that certain types of posts and comments are more frequent than others. This finding provides valuable insight into the distribution and interactions of personality types within communities.
+
+
+```{python}
+# load the preprocessed data
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import kaleido
+
+df = pd.read_csv("../data/csv/time-series.csv")
+
+# Create subplots
+fig = make_subplots(rows=2, cols=1, subplot_titles=("Monthly Submission Counts", "Average Comments and Scores"))
+
+# Line plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['count(submission_title)'], 
+               name='Submission Counts', 
+               mode='lines+markers'),
+    row=1, col=1
+)
+
+# Bar plot
+fig.add_trace(
+    go.Bar(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+           y=df['avg_num_comments'], 
+           name='Average Number of Comments'),
+    row=2, col=1
+)
+# Scatter plot 
+fig.add_trace(
+    go.Scatter(x=df['submission_year'].astype(str) + '-' + df['submission_month'].astype(str), 
+               y=df['avg_score'], 
+               name='Average Score', 
+               mode='markers'),
+    row=2, col=1
+)
+
+# Update xaxis
+fig.update_xaxes(title_text="Date", row=1, col=1)
+fig.update_xaxes(title_text="Date", row=2, col=1)
+
+# Update yaxis 
+fig.update_yaxes(title_text="Submission Counts", row=1, col=1)
+fig.update_yaxes(title_text="Average Values", row=2, col=1)
+
+# Update title and layout
+fig.update_layout(
+    title_text="Reddit MBTI Topic Submission Trends",
+    title_x=0.45,  # This centers the title
+    showlegend=True,
+
+)
+fig.update_layout(
+    title=dict(
+        font=dict(
+            size=20, # Adjusting the font size
+        )
+    )
+)
+
+# Show the figure
+fig.show()
+
+```
+
+
+### 2.MBTI Context: Exploring the discourse world of introversion and extroversion (NLP)
+Using NLP technology to analyze the discussion content in the community, we successfully identified the main discussion topics and key words about introversion and extroversion. This not only reveals common perceptions of these character traits among community members, but also demonstrates differences in emotional tendencies and word choice. These insights provide a deeper understanding of the nuances of language expression across MBTI types.
+
+
+![Quantile value to divide comment score.](../data/plots/I_E_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/N_S_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/T_F_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/J_P_mbti_token_clouds.jpg)
+
+
+### 3.MBTI Decoded: The Power of Predicting Personality with Machine Learning (ML)
+By building and applying machine learning models, we successfully predicted MBTI types, demonstrating the model's remarkable performance in accuracy and performance. Additionally, our analysis explores potential links between MBTI types and health data, revealing specific health risks and patterns that different personality types may face. These insights are extremely important for designing targeted health intervention strategies.
+
+
+```{python}
+import pandas as pd
+import plotly.graph_objs as go
+import networkx as nx
+
+rules_pd=pd.read_csv("../data/csv/ordered_association_rules.csv")
+
+# Create a graph
+G = nx.DiGraph()
+
+# Add nodes and edges
+for _, row in rules_pd.iterrows():
+    G.add_edge(str(row['antecedent']), str(row['consequent']), weight=row['confidence'])
+
+# Generate position layout
+pos = nx.spring_layout(G)
+
+# Create edge trace
+edge_x = []
+edge_y = []
+for edge in G.edges():
+    x0, y0 = pos[edge[0]]
+    x1, y1 = pos[edge[1]]
+    edge_x.extend([x0, x1, None])
+    edge_y.extend([y0, y1, None])
+
+edge_trace = go.Scatter(
+    x=edge_x, y=edge_y,
+    line=dict(width=0.5, color='#888'),
+    hoverinfo='none',
+    mode='lines')
+
+# Create node trace
+node_x = []
+node_y = []
+for node in G.nodes():
+    x, y = pos[node]
+    node_x.append(x)
+    node_y.append(y)
+
+#color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+color_list=['#081d58','#253795','#1f80b8','#97d6b9','#ffffd9']
+
+node_trace = go.Scatter(
+    x=node_x, y=node_y,
+    mode='markers+text',  # Add 'text' to the mode
+    text=[node for node in G.nodes()],  # Add node labels
+    textposition="bottom center",  # Position of text
+    hoverinfo='text',
+    marker=dict(
+        showscale=True,
+        colorscale=color_list,
+        reversescale=True,
+        color=[],
+        size=15,  # Increase node size
+        colorbar=dict(
+            thickness=15,
+            title='Number of Node Connections',
+            xanchor='left',
+            titleside='right'
+        ),
+        line_width=1.5))
+
+# Add node text and hover info
+node_adjacencies = []
+node_text = []
+for node, adjacencies in enumerate(G.adjacency()):
+    node_adjacencies.append(len(adjacencies[1]))
+    node_text.append(f'{adjacencies[0]}')
+
+node_trace.marker.color = node_adjacencies
+node_trace.text = node_text
+
+# Create figure
+fig = go.Figure(data=[edge_trace, node_trace],
+             layout=go.Layout(
+                title='<br>Network graph of association rules',
+                titlefont_size=23,
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=20,l=5,r=5,t=80),
+                annotations=[dict(
+                    text="Python plotly library",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.005, y=-0.002)],
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                )
+
+fig.show()
+
+```
+
+Through an in-depth analysis of the MBTI subreddit community, this project successfully achieved insights into community engagement, MBTI type-specific discussions, trends over time, posting behavior within different personality dyads, and correlations with health data. Comprehensive understanding. This project also sheds light on how personality types shape patterns of communication and behavior in a community, providing a unique insight into this complex and diverse community.
+
+
+# Next Steps Plan
+
+To further deepen our understanding of the MBTI subreddit community and improve the comprehensiveness of our analysis, our future plans will include several key directions. 
+
+- First, we plan to examine comments and posts that may have been deleted or removed to ensure our data set is as complete as possible to provide a more accurate analysis of community engagement. 
+- Second, we will set out to collect more MBTI-related health data to make broader generalizations about the relationship between different personality types and health conditions. This will not only enhance our current health-related analyses, but may also reveal new interesting associations. 
+- Finally, we plan to increase interaction with users and audiences. By participating more actively in the community, we can better understand the needs and interests of our users, thereby further improving our analysis methods and research directions.
+
+# What we learned from this project
+
+![](imgs/infp.png){style="float: left;border-radius: 5%;margin:10px 20px;" alt=""  width="30%"}
+
+<br>
+During the exploration of this project, I found that INFP people like me like to explore topics about MBTI on Reddit. Based on the actual situation of my daily use of the Internet, it seems that this is indeed the case. I pay attention to exploring people's inner voices. I like to listen to people telling their own stories online, and I am also very empathetic. In the exploration of MBTI and physical health, it is true that due to my personality, I like to stay at home and do not like to exercise. And this also caused my spinal health to be in a bad situation. This analysis reinforced my need to change my habits to improve my health.
+<br>
+
+---------------------
+
+![](imgs/estj.png){style="float: right;border-radius: 5%;margin:10px 20px;" alt=""  width="30%"}
+
+<br>
+In our MBTI project, I've come to a somewhat bittersweet realization about my own personality type: we're the unsung heroes of the MBTI world, rarely the center of online discussions. Our analysis showed that ESTJs, like me, are less inclined to share our lives on the internet, preferring real-life interactions. And a striking personal revelation came from our health data analysis - it turns out ESTJs are prone to posture-related issues. As a desk-bound workaholic, I could relate all too well, having experienced the exact ailments our data pointed out.
+<br><br>
+
+---------------------
+
+![](imgs/enfj.svg){style="float: left;border-radius: 5%;margin:10px 20px;" alt=""  width="30%"}
+
+As expected, individuals with F/P personality types tend to share their emotions on social media more than those with T/J types. Surprisingly, contrary to common perceptions, I found that I (introverted) personalities posted over three times more than E (extroverted) ones. This could indicate that introverts, often perceived as reserved, might find social media a comfortable platform to express themselves, more so than extroverts. Additionally, there's a noticeable trend in MBTI discussions on social media, with peaks at the start and end of each year. This suggests that people are more inclined to explore and discuss their MBTI types during periods of self-reflection and while setting New Year's resolutions.
+
+---------------------
+
+![](imgs/intj.png){style="float: right;border-radius: 5%;margin:10px 20px;" alt=""  width="30%"}
+<br>
+Through this project, I've observed that individuals with an extraverted (E) personality type tend to be active on social media, and their posts are easily discoverable. On the other hand, those with an introverted (I) personality type seem to be more reserved, often avoiding the sharing of their thoughts on social platforms. Consequently, I posit that individuals with an introverted personality type are more likely to exude a sense of mystery. Additionally, I've come across an intriguing observation regarding the correlation between MBTI types and individuals' health situations. This connection might be attributed to their habits and lifestyle choices.
+

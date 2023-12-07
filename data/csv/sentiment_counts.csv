@@ -1,0 +1,13 @@
+score_category,sentiment,count
+Low,neutral,43229
+Low,negative,257820
+Medium,positive,288381
+Very High,positive,274252
+Low,positive,509866
+High,negative,50260
+Medium,negative,105302
+Very High,negative,118009
+Medium,neutral,22645
+Very High,neutral,23356
+High,neutral,10537
+High,positive,130481

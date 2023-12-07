@@ -1,0 +1,168 @@
+---
+title: Introduction 
+author:
+  - Project Team 10
+  - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
+---
+
+![](imgs/16mbti.svg)
+
+# Introduction
+
+Our story begins with a simple fact: we four are the best of friends. From the first day of our program, we gravitate towards one another, becoming not just friends but also classmates and teammates on numerous projects. As time passed, we discovered that despite our diverse hobbies, habits, and personalities, we remained deeply connected. One day, we shared our MBTI types and were fascinated to find we each had a distinct one! This revelation led us to attribute our differences to our MBTI types, attempting to understand one another’s behaviors through this lens. It was intriguing—like how, our INFP friend, who could capture the beauty of a single flower in a thousand photographs, while the ESTJ friend would hardly notice the changing weather. However, we realized that hastily pigeonholing our behaviors under MBTI seemed too simplistic, and thus we turned to data science to dig deeper. This curiosity is the genesis of our project.
+
+The MBTI personality test categorizes individuals into one of 16 personality types based on preferences in four dimensions: Extraversion (E) vs. Introversion (I), Sensing (S) vs. Intuition (N), Thinking (T) vs. Feeling (F), and Judging (J) vs. Perceiving (P). Each letter represents a trait, with each combination forming a personality type that provides a fun and insightful reflection of how we interact with the world. To enrich your understanding and involvement in this project, we invite you to take the test at [16Personalities](https://www.16personalities.com/).
+
+<p align="center"><img src="imgs/logo.svg"></p>
+
+# Project Summary
+
+In this project, we conduct a comprehensive analysis of submissions and comments on the MBTI subreddit. We aim to uncover the distinct behaviors of the various MBTI types online—ranging from the number of posts and discussed topics to the length of responses and the popularity of related discussions. We also integrate data beyond textual information, most notably health data. While MBTI tests primarily focus on personality types and psychological preferences, they seldom link to physical health. Our goal is to offer viewers new perspectives to understand their own and others' MBTI types more holistically.
+
+Understanding MBTI types matters because it offers a framework for appreciating our differences and navigating interpersonal dynamics. This project aims to deepen that understanding by correlating MBTI types with online behavior and health data, potentially unveiling new insights into our digital and physical well-being. By engaging with this analysis, we hope to foster a greater appreciation for the diversity of personalities and their unique contributions to our world.
+
+
+
+
+# Group Member Introduction
+
+![](imgs/infp.png){style="float: left;border-radius: 5%;margin:20px 20px;" alt=""  width="33%"}
+
+> INFP individuals are deeply empathetic and creative, driven by strong personal values and a desire for authenticity, often expressing themselves through artistic or altruistic endeavors.
+
+Hi, I am Xin Xiang. As an emotionally stable INFP, I like things that are outside the norm, but also retro and nostalgic. I yearn for freedom and independence, but I also long for order and stability. Perhaps this is the ambivalence of INFP, but it is also the charm of INFP.
+
+When faced with deadlines and teamwork, I will get used to finishing everything before the deadline instead of finishing one thing one by one. In teamwork, when everyone is highly motivated, I am more like the type of person who listens to leadership; and if everyone is not highly motivated, I will probably take on the role of leader and arrange tasks.
+
+---------------------
+
+![](imgs/estj.png){style="float: right;border-radius: 5%;margin:20px 20px;" alt=""  width="35%"}
+
+> ESTJs are decisive leaders who value tradition, order, and security. Known for their logical and organized approach, they excel in managing projects and teams, bringing structure and dependability to both their professional and personal lives. 
+
+Hello! I'm Mingqian Liu, an ESTJ, often seen as the natural 'manager' in MBTI circles. This label fits me like a glove in daily life. I'm all about planning, whether it's nailing down my daily exercise regimen or plotting my career trajectory. Deadlines are my playground, where I excel without a sweat. But I hate randomness in life. It's the structured, well-planned moments that truly make me shine.
+
+In every team, I naturally find myself in the leader's role. For this project, I'm the one who first dives into the assignment, laying out plans and tasks. My focus is singular—once I begin something, I must see it through to the end. Even though I'm the goofiest person in our friendship, my teammates know me to be serious, demanding, and even critical when it comes to work. I owe a bit of an apology to my team, especially the easygoing 'FP' personalities among us, haha!
+
+---------------------
+
+![](imgs/enfj.svg){style="float: left;border-radius: 5%;margin:20px 20px;" alt=""  width="32%"}
+
+> The primary characteristics of ENFJ individuals include being empathetic, inspiring, and altruistic leaders who excel in understanding and motivating people, and in orchestrating communal harmony and cooperation.
+
+Hi, here is Yanfeng Zhang, an ENFJ! It's kind of my thing to find happiness in positively influencing others' lives, even if it seems a bit odd to some. Sure, this sometimes means I lean towards being a people pleaser – I'm that friend who finds it hard to say no. But I see it as part of my charm! What really counts is that I'm always here for my firends, ready for a genuine heart-to-heart or to lend a helping hand whenever they need it.
+
+In team settings, I, as an FJ, often feel like I'm in a unique spot. I'm not as ultra-efficient as a TJ, nor as laid-back as an FP. I might worry about unfinished tasks, yet find myself procrastinating, which is a quirky mix! But I'm flexible – I can keep up with a TJ's fast pace or join an FP for a relaxing game of badminton before a deadline. Secretly, I love that I can mesh the best of both worlds, quirks and all!
+
+---------------------
+
+![](imgs/intj.png){style="float: right;border-radius: 5%;margin:20px 20px;" alt=""  width="33%"}
+
+> The primary characteristics of INTJ individuals include being analytical, strategic, and independent thinkers who excel in delving into intricate concepts and resolving problems. 
+
+Hi I am Xinyu Li, and my MBTI type is INTJ.  As an INTJ, I find joy in acquiring new knowledge and engaging with complex issues, such as pondering the meaning of life. I have a preference for organizing my daily activities with a to-do list and derive satisfaction from completing tasks. 
+
+When faced with deadlines and teamwork, I thrive on proactive planning, and my preferred method for alleviating pressure is to focus on completing the current task at hand. In team settings, I actively contribute my thoughts and take necessary actions. Timely completion of tasks is a priority for me, and I strive to be an efficient worker. I adhere to scheduled time slots for my tasks and prefer to stick to my plan without frequently changing it for other assignments.
+
+
+
+# Data Science Goals
+
+## EDA Topics 
+
+1. **Business Goal:** Gain insights into the engagement levels within the MBTI subreddit community by analyzing the volume and intensity of discussions over the last two years. Identify the most captivating topics and explore the depth of interactions through the length of responses.
+
+    **Technical Proposal:**
+    - Query the dataset to calculate the total number of posts over the past two years.Break down the post count yearly to discern any trends in volume.
+    - Apply sorting algorithms to organize posts by the number of comments received. Isolate and detail the top 10 titles that garnered the most community interaction.
+    - Introduce a "word_count" column derived from splitting titles and comments by spaces and tallying the resulting words.
+    - Construct and analyze the distribution of word counts for both submissions and comments to determine the general length and depth of community responses.
+
+2. **Business Goal:** Determine which of the 16 personality types garners the most discussion topics (submissions) and which type elicits the most engagement through replies (comments). Also, find out the main content of the most replied-to post for each personality type. 
+
+    **Technical Proposal:** For each submission title, employ pattern matching to identify mentions of any MBTI personality types (e.g., ESTJ, ISTJ, ENFP, etc.). Create a new column, "mbti_type_related", to label the relevant personality type associated with the post. If no specific type is discerned in the title, label it as "general" under the "mbti_type_related" column. Then, group by the "mbti_type_related" column and:
+    - Count the total number of submissions per type to determine the most frequently discussed personality type.
+    - Sum up the comments to find out which personality type receives the most engagement through replies.
+    - Sort by the number of comments in descending order to identify the most engaged post for each personality type, capturing its core content or theme for reference.
+
+3. **Business Goal:** Track and visualize the evolution of discussions around MBTI to understand changing trends, peaks of interest, and any cyclic patterns over the data coverage period.
+
+    **Technical Proposal:** 
+    - Query the dataset to summarize the total number of posts and break down the post count, comment count, and track the average score monthly to understand the trends.
+    - Visualize the changing monthly trends and apply time-series analysis to detect recurring patterns and notable deviations of MBTI discussions over the past two years.
+    - Summarize key trends and patterns with a focus on significant peaks and troughs.
+
+4. **Business Goal:** Understand the posting behavior and distribution across different MBTI personality types by analyzing the volume and average length of posts for each type as well as along the four MBTI dichotomies: Introversion/Extroversion, Intuition/Sensing, Thinking/Feeling, Judging/Perceiving.
+
+    **Technical Proposal:**
+    - Introduce an external dataset containing posts and the user’s MBTI types. 
+    - Parse the dataset to split posts, categorize them by MBTI type, and generate a summary table detailing the total posts and average post length for each of the 16 MBTI personality types.
+    - Consolidates the data based on the four MBTI dichotomies (I/E, N/S, T/F, J/P), showing the number of posts and average post length for each trait.
+    - Visualize the data to extract insights on posting patterns, such as which MBTI types are more active or which types tend to write longer posts.
+    - Determine if certain dichotomies correlate with more frequent or more verbose posting behaviors.
+    - Summarize the findings in a comprehensive report that details the distinctive posting features of the MBTI types and dichotomies.
+
+5. **Business Goal:** Identify patterns in health-related data that correlate with MBTI personality types. The analysis is designed to identify trends in postural categories and pain levels across age groups to inform targeted health programs and interventions.
+
+    **Technical Proposal:** 
+    Individual pain indicators for each MBTI personality type were combined into a cumulative "SUM PAIN" measure to analyze overall pain trends. Postural data was divided into different categories, revealing posture-related health conditions in different MBTI signatures. The data were then grouped by MBTI type, and mean age and pain scores and type frequencies were calculated to identify important health patterns across personality groups.
+    - Conduct a statistical analysis to explore the relationship between MBTI types and posture-related health outcomes, utilizing a heatmap to visualize the prevalence of certain postures across the MBTI spectrum. 
+    - Employ a scatter plot analysis to examine the correlation between age, the frequency of reported pain, and MBTI types, highlighting the average pain levels with bubble sizes to indicate the frequency of each type.
+
+## NLP Topics 
+
+6. **Business Goal:** This proposal aims to explore sentiment trends in relation to comment scores within the MBTI subreddit community. Our goal is to determine if higher-scoring comments correlate with more positive sentiments. This analysis is intended to provide insights into user engagement and the emotional content of highly-rated comments.
+
+    **Technical Proposal:**
+    - We will first categorize the original ‘comment_score’ into four levels (‘Low’, ‘Medium’, ‘High’, ‘Very High’) using the 25th, 50th, and 75th percentiles.
+    - Then we will apply a pretrained sentiment analysis model to classify each comment as ‘positive’, ‘neutral’, or ‘negative’.
+    - By grouping these results according to our score categories and visualizing the data with a heatmap, we aim to reveal any significant patterns or correlations between the comment scores and their respective sentiments.
+
+7. **Business goal:** Through an analysis of numerous conversations on Reddit, certain topics emerge as the most prevalent. Our goal is to comprehend the predominant subjects within MBTI discussions.
+
+    **Technical Proposal:**
+    - Implement Wordcloud to see the common words in Reddit submission titles.
+    - Use TF-IDF to get the important words in each Reddit submission.
+    - Data collection and preparation: Filtering the discussions related to the MBTI discussion. Then conduct data preprocessing steps for text data: tokenization, remove stop words, and Count Vectorization.
+    - Apply NLP topic modeling techniques (LDA) on submission to identify prevalent discussion topics and also get the weight of each topic word to see the dominant words in each topic.
+
+
+8. **Business Goal:** Analyze linguistic patterns and topic preferences within the MBTI community by examining the diversity of language used in posts and identifying topics or keywords that resonate with each of the 16 MBTI personality types and the four dichotomous axes (I/E, N/S, T/F, J/P).
+
+    **Technical Proposal:** 
+    - Calculate metrics like Lexical Density, Lexical Variety, and Average Word Length for each post. Analyze the use of unique words and complexity of language for each MBTI type to assess the diversity in vocabulary, syntax, and readability among the posts of different MBTI types.
+    - Use frequency analysis to determine the most common words and phrases for each MBTI type and across the dichotomous axes.
+    - Develop visual representations, such as word clouds, to illustrate the unique language use and topic interests of each MBTI type and axis.
+
+
+## ML Topics 
+
+9. **Business goal:** Employ the MBTI Health Dataset for fitting a linear regression model that predicts an individual’s total pain range, which spans from 0 to 40. Our goal is to explore how various factors, including posture, impact an individual’s pain level and to ascertain if specific MBTI characteristics significantly influence this pain level.
+
+    **Technical Proposal:**
+    - Data preprocessing including encoding, define pipeline, correlation exploration, capture the intricate and non-linear relationships within the posture data, 
+    - Incorporate a variety of explanatory variables: physical attributes (height, weight, activity level), basic demographic information (age, sex), and personality traits as indicated by the Myers-Briggs Type Indicator (MBTI).
+    - Build linear regression model, assess model efficacy through two pivotal metrics: the Root Mean Squared Error (RMSE).
+    - Save the model for future use and apply model to new data
+
+
+10. **Business goal:** By analyzing MBTI-related discussions on Reddit, our aim is to identify the degree of association between different MBTI personality types. This analysis seeks to understand the interconnectedness of different personality types in online communication and expression. The insights gained will enhance our understanding of how various personality types interact in the digital space.
+
+    **Technical Proposal:**
+    - Text Preprocessing: Clean, lexically annotate, and recognize entities in MBTI-related posts from Reddit to prepare the text data for analysis.
+    - Using the FP-Growth Model: Explore the text data using the FP-Growth algorithm to find frequent item sets and association rules between different MBTI types.
+    - Analysis of Frequent Item Sets and Association Rules: Calculate the support and confidence of the association rules to ensure the reliability and significance of the identified patterns. Perform a descending-order sorting of the frequent item sets and association rules to highlight the most significant patterns.
+    - Drawing and Displaying Association Rule Network Graphs: For the identified association rules, create network graphs to visually represent the relationships between different MBTI types.
+
+
+
+11. **Business goal:** Develop a predictive model that can identify an individual’s MBTI personality type based on their online text entries.
+
+    **Technical Proposal:**
+    - Clean the text data to remove irrelevant information, such as special characters, URLs, and non-standard language elements.
+    - Apply natural language processing techniques to tokenize, and remove stopwords from the text data for further analysis.
+    - Train machine learning models (e.g., logistic regression, support vector machines, random forests to predict MBTI types based on the engineered features.
+    - Define clear metrics to compare model performances, focusing on accuracy, F1 score, Precision, and Recall to measure the model’s ability to classify the posts into different MBTI types.
+    - Plot confusion matrices to analyze the model’s performance in predicting each MBTI type.
+
+

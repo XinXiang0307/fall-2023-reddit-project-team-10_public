@@ -1,0 +1,910 @@
+---
+title: Milestone 2 NLP
+author:
+  - Project Team 10
+  - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
+---
+
+
+![](imgs/nlp.svg)
+
+# Analysis Report
+
+# NLP Topic 1: Sentiment Analysis
+
+> - **Business Goal:** This proposal aims to explore sentiment trends in relation to comment scores within the MBTI subreddit community. Our goal is to determine if higher-scoring comments correlate with more positive sentiments. This analysis is intended to provide insights into user engagement and the emotional content of highly-rated comments.
+> - **Technical Proposal:** 
+> - We will first categorize the original 'comment_score' into four levels ('Low', 'Medium', 'High', 'Very High') using the 25th, 50th, and 75th percentiles. 
+>- Then we will apply a pretrained sentiment analysis model to classify each comment as 'positive', 'neutral', or 'negative'. 
+>- By grouping these results according to our score categories and visualizing the data with a heatmap, we aim to reveal any significant patterns or correlations between the comment scores and their respective sentiments.
+
+Link to [Sentiment Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_sentiment.ipynb)
+
+
+
+## 1.1 New Column "score_category"
+A new categorical column, "score_category," was introduced to the comments dataset to categorize the original numerical 'comment_score'. This stratification was informed by the calculated 25th, 50th, and 75th percentiles, ensuring an equitable division. Scores below the 25th percentile were classified as "Low," those between the 25th and 50th percentiles as "Medium," between the 50th and 75th as "High," and scores above the 75th percentile as "Very High." This new variable will be use in later analysis, to examine the relationship between comment scores and their sentiment labels.
+
+```{python}
+#| eval: false
+# Load data
+comment_load = spark.read.parquet(f"{workspace_wasbs_base_url}/mbti_comments.parquet")
+# Cache the dataset
+comment_load.cache()
+# Calculate the 25th, 50th, and 75th percentiles
+quantiles = comment_load.stat.approxQuantile("comment_score", [0.25, 0.5, 0.75], 0.0)
+
+print(f"25th percentile: {quantiles[0]}")
+print(f"50th percentile (median): {quantiles[1]}")
+print(f"75th percentile: {quantiles[2]}")
+
+comment_score_summary = comment_load.describe(['comment_score'])
+comment_score_summary.show()
+
+# Create a new categorical column based on comment_score division
+def score_category(score):
+    if score <= quantiles[0]:
+        return 'Low'
+    elif score <= quantiles[1]:
+        return 'Medium'
+    elif score <= quantiles[2]:
+        return 'High'
+    else:
+        return 'Very High'
+
+score_category_udf = F.udf(score_category)
+
+comment_load = comment_load.withColumn("score_category", score_category_udf("comment_score"))
+
+# View the schema to confirm the new column addition
+comment_load.printSchema()
+```
+
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Comment Score Summary Statistics
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/comment_score_summary.csv")
+md = tabulate(df.head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+::: {layout-ncol=2}
+![Quantile value to divide comment score.](../data/plots/quantile.png)
+
+![Updated Comment Data Column list.](../data/plots/new_column.png)
+:::
+
+## 1.2 Sentiment Analysis Using Pre-trained Model
+
+### 1.2.1 Sentiment Label Added
+Utilizing a pretrained model, we applied sentiment analysis to the text of each comment, assigning a sentiment label—positive, neutral, or negative—based on the comment's content. This process effectively transformed the unstructured textual data into structured, categorical insights.
+```{python}
+#| eval: false
+# Define the name of the SentimentDLModel
+MODEL_NAME = "sentimentdl_use_twitter"  # Replace with the model name you intend to use
+
+# Configure the Document Assembler
+documentAssembler = DocumentAssembler()\
+    .setInputCol("comment_text")\
+    .setOutputCol("document")
+
+# Configure the Universal Sentence Encoder
+use = UniversalSentenceEncoder.pretrained(name="tfhub_use", lang="en")\
+    .setInputCols(["document"])\
+    .setOutputCol("sentence_embeddings")
+
+# Configure the SentimentDLModel
+sentimentdl = SentimentDLModel.pretrained(name=MODEL_NAME, lang="en")\
+    .setInputCols(["sentence_embeddings"])\
+    .setOutputCol("sentiment")
+
+# Set up the NLP Pipeline
+nlpPipeline = Pipeline(
+    stages=[
+        documentAssembler,
+        use,
+        sentimentdl
+    ])
+
+# Apply the Pipeline to your DataFrame
+pipelineModel = nlpPipeline.fit(comment_load)
+results = pipelineModel.transform(comment_load)
+
+result_df = results.select("comment_text","comment_controversiality","reply_to","score_category",F.explode("sentiment.result").alias("sentiment"))
+result_df.show(10)
+```
+
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/sentiment_result_limit5.csv")
+md = tabulate(df.head(4), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+### 1.2.2 Results
+Our initial analysis of sentiment in the MBTI subreddit discussions relied on raw count data, which suggested that 'Low' score category comments were predominantly negative, indicating a prevalence of critical voices. In contrast, 'Medium' and 'Very High' score categories seemed to have a higher share of positive comments, pointing to a more favorable reception of contributions in these categories. The 'High' score category appeared to have a balanced sentiment distribution, hinting at diverse engagement levels within the subreddit.
+
+However, this approach was flawed due to the uneven total number of comments across score categories. To correct this, we calculated the percentage of sentiments within each category, revealing a different picture: positive sentiment was actually dominant across all categories, with the 'Low' category at 62.88% positive, contrary to our initial findings. This percentage-based analysis helped clarify that, irrespective of score categories, there is a consistent trend of positive sentiment within the MBTI community discussions on Reddit.
+
+
+```{python}
+#| eval: true
+#| echo: false
+#| output: true
+#| tbl-cap: Sentiment Labels Group by Count
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/sentiment_counts.csv")
+# Calculate the total count for each score_category
+total_counts = df.groupby('score_category')['count'].transform('sum')
+
+# Calculate the percentage of each sentiment in each score_category
+df['percentage'] = ((df['count'] / total_counts) * 100).round(2)
+
+md = tabulate(df.head(20), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+```{python}
+#| eval: true
+#| echo: true
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Reshape the data for heatmap plotting
+heatmap_data = df.pivot(index='score_category', columns='sentiment', values='count')
+
+#heatmap_data = df.pivot("score_category", "sentiment","count")
+# Convert the 'score_category' to a categorical type with the desired order
+ordered_categories = ['Low','Medium','High','Very High']
+heatmap_data.index = pd.CategoricalIndex(heatmap_data.index, categories=ordered_categories, ordered=True)
+
+# Sort the DataFrame by the 'score_category' index to ensure the order is applied
+heatmap_data.sort_index(level='score_category', ascending=False, inplace=True)
+plt.figure(figsize=(12, 8))
+sentiment_heatmap = sns.heatmap(heatmap_data, annot=True, fmt=".2f", cmap="YlGnBu")
+plt.title('Heatmap of Sentiment Counts by Score Category')
+plt.ylabel('Score Category')
+plt.xlabel('Sentiment')
+
+#plt.savefig('Users/ml2078/fall-2023-reddit-project-team-10/plots/csv/heatmap.png', dpi=300, bbox_inches='tight')
+plt.show()
+```
+
+```{python}
+#| eval: true
+#| echo: true
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Reshape the data for heatmap plotting
+heatmap_data = df.pivot(index='score_category', columns='sentiment', values='percentage')
+
+#heatmap_data = df.pivot("score_category", "sentiment","count")
+# Convert the 'score_category' to a categorical type with the desired order
+ordered_categories = ['Low','Medium','High','Very High']
+heatmap_data.index = pd.CategoricalIndex(heatmap_data.index, categories=ordered_categories, ordered=True)
+
+# Sort the DataFrame by the 'score_category' index to ensure the order is applied
+heatmap_data.sort_index(level='score_category', ascending=False, inplace=True)
+plt.figure(figsize=(12, 8))
+sentiment_heatmap = sns.heatmap(heatmap_data, annot=True, fmt=".2f", cmap="YlGnBu")
+plt.title('Heatmap of Sentiment Percentages by Score Category')
+plt.ylabel('Score Category')
+plt.xlabel('Sentiment')
+
+#plt.savefig('Users/ml2078/fall-2023-reddit-project-team-10/plots/csv/heatmap.png', dpi=300, bbox_inches='tight')
+plt.show()
+```
+
+
+
+
+
+
+# NLP Topic 2: Topic Analysis
+
+> - **Business Goal:** Through an analysis of numerous conversations on Reddit, certain topics emerge as the most prevalent. Our goal is to comprehend the predominant subjects within MBTI discussions.
+> - **Technical Proposal:**
+> - Implement Wordcloud to see the common words in Reddit submission titles.
+> - Use TF-IDF to get the important words in each Reddit submission.
+> - Data collection and preparation: Filtering the discussions related to the MBTI discussion. Then conduct data preprocessing steps for text data: tokenization, remove stop words,  and Count Vectorization. 
+> - Apply NLP topic modeling techniques (LDA) on submission to identify prevalent discussion topics and also get the weight of each topic word to see the dominant words in each topic.
+
+Link to [Topic Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_topic.ipynb)
+
+
+```{python}
+#| eval: false
+# load the submission data
+sub_load = spark.read.parquet(f"{workspace_wasbs_base_url}/mbti_submission.parquet")
+from pyspark.sql.functions import col, lower, regexp_replace
+from pyspark.ml.feature import Tokenizer
+from pyspark.ml import Pipeline
+## data cleaning
+#convert to lower case
+df_cleaned = sub_load.withColumn("cleaned_text", lower(col("submission_title")))
+# remove punctuation
+df_cleaned = df_cleaned.withColumn("cleaned_text", regexp_replace("cleaned_text", "[^a-zA-Z0-9\\s]", ""))
+# remove the rows with na in the cleaned_text column
+df_cleaned = df_cleaned.na.drop(subset=["cleaned_text"])
+
+```
+
+## 2.1 Word Length Distribution 
+Our word length distribution data processing has been shown in the eda proposal 1. 
+
+### 2.1.1 Word length distribution of the Submission Title
+
+As the plot show, we can see that the distribution of the submission title length is right skewed, which means that most of the submission title length is short. And the distribution is also unimodal, which means that there is only one peak in the distribution. The peak is around 30 words, which means that most of the submission title length is around 30 words.
+
+
+```{python}
+#| eval: false
+import random
+group_size = 10
+max_length = 312  # Maximum length
+
+
+num_groups = (max_length // group_size) + 1
+
+# Create a list of lists to store lengths in each group
+grouped_data = [[] for _ in range(num_groups)]
+
+# Place the lengths into their respective groups
+for len_val in title_lengths:
+    group_index = len_val // group_size
+    grouped_data[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data = []
+
+# Get a 10% random sample from each group
+for group in grouped_data:
+    sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+    sampled_data.extend(random.sample(group, sample_size))
+
+# Create a distribution plot using Plotly
+fig = ff.create_distplot([sampled_data], ['Submission Title'], bin_size=5)
+fig.update_layout(
+    title='Submission Title Length Distribution',
+    xaxis_title='Length of Submission Title',
+    yaxis_title='Density'
+)
+fig.show()
+```
+
+![Submission Title Length Distribution](../data/plots/submission_title_length.png)
+
+### 2.1.2 Comment length distribution 
+
+As for the comments length, T3 comments mean the direct comments to the submission and T1 comments mean the comments to the T3 comments. As the plot shows, we can see that the distribution of the T3 comments length is right skewed, which means that most of the T3 comments length is short. And the distribution is also unimodal, which means that there is only one peak in the distribution. The peak is around 10 words, which means that most of the T3 comments length is around 10 words. As for the T1 comments, the distribution is also right skewed and unimodal, but the peak is around 10 words, which means that most of the T1 comments length is around 10 words. And the distribution of T1 comments length is similar right skewed as the distribution of T3 comments length. We can infer that all the comments tend to be short.
+
+```{python}
+#| eval: false
+group_size = 10 # Group size
+max_length = 999  # Maximum length
+
+# Calculate the number of groups
+num_groups = (max_length // group_size) + 1
+
+# Create a list of lists to store lengths in each group
+grouped_data = [[] for _ in range(num_groups)]
+
+# Place the lengths into their respective groups
+for len_val in comment_t1_lengths:
+    group_index = min(len_val // group_size, num_groups - 1)  # Ensure the index doesn't exceed the range
+    grouped_data[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data = []
+
+# Get a 10% random sample from each group
+for group in grouped_data:
+    if len(group) > 0:
+        sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+        sample_size = min(sample_size, len(group))  # Use the minimum of 10% sample or group size
+        sampled_data.extend(random.sample(group, sample_size))
+
+ # Create a list of lists to store lengths in each group
+grouped_data_t3 = [[] for _ in range(num_groups)]           
+# Place the lengths into their respective groups
+for len_val in comment_t3_lengths:
+    group_index = min(len_val // group_size, num_groups - 1)  # Ensure the index doesn't exceed the range
+    grouped_data_t3[group_index].append(len_val)
+
+# Create a list to store the sampled data from each group
+sampled_data_t3 = []
+
+# Get a 10% random sample from each group
+for group in grouped_data_t3:
+    if len(group) > 0:
+        sample_size = max(1, int(1 * len(group)))  # Ensure at least 1 sample is taken
+        sample_size = min(sample_size, len(group))  # Use the minimum of 10% sample or group size
+        sampled_data_t3.extend(random.sample(group, sample_size))
+```
+
+```{python}
+#| eval: false
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+# Assuming sampled_data and sampled_data_t3 are your data arrays
+
+# Create subplots
+fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, sharex=True,figsize=(8, 6))
+ax1.hist(sampled_data, bins=50, color=(0.2, 0.7, 0.4, 0.7), alpha=0.7,density=True)
+sns.kdeplot(sampled_data, color=(0.2, 0.7, 0.4), ax=ax1)
+ax1.set_title('T1 Comment Length Distribution Plot')
+ax1.set_xlabel('Length')
+ax1.set_ylabel('Frequency')
+
+# Plot histogram for Comment T3
+ax2.hist(sampled_data_t3, bins=50, color=(0.5, 0, 0.5, 0.7), alpha=0.7,density=True)
+sns.kdeplot(sampled_data_t3, color=(0.5, 0, 0.5), ax=ax2)
+ax2.set_title('T3 Comment Length Distribution Plot')
+ax2.set_xlabel('Length')
+ax2.set_ylabel('Frequency')
+
+# Adjust layout
+plt.tight_layout()
+
+# Show the combined plot
+plt.savefig("Users/xl659/fall-2023-reddit-project-team-10/data/plots/all_comments_length_distribution.png")
+plt.show()
+```
+
+![comment length distribution](../data/plots/all_comments_length_distribution.png)
+
+
+## 2.2 The most common words in the submission title
+
+In order to understand the most common words that exist in the Reddit submissions related to MBTI, we could use the wordcloud to get the word frequency in all the submissions. 
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import col, udf
+from pyspark.sql.types import ArrayType, StringType
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import Tokenizer, StopWordsRemover, CountVectorizer, IDF
+from pyspark.ml.linalg import DenseVector
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from pyspark.ml.clustering import LDA
+
+# Step 1: Tokenization (if not done previously)
+tokenizer = Tokenizer(inputCol="cleaned_text", outputCol="words")
+df_tokenized = tokenizer.transform(df_cleaned)
+
+# Step 2: Remove Stopwords
+stopwords_remover = StopWordsRemover(inputCol="words", outputCol="filtered_words")
+df_no_stopwords = stopwords_remover.transform(df_tokenized)
+
+# Step 3: Count Vectorization
+count_vectorizer = CountVectorizer(inputCol="filtered_words", outputCol="raw_features")
+count_vectorizer_model = count_vectorizer.fit(df_no_stopwords)
+df_count_vectorized = count_vectorizer_model.transform(df_no_stopwords)
+
+# Step 4: Term Frequency-Inverse Document Frequency (TF-IDF) transformation
+idf = IDF(inputCol="raw_features", outputCol="features")
+idf_model = idf.fit(df_count_vectorized)
+df_tfidf = idf_model.transform(df_count_vectorized)
+
+# Step 5: Build the LDA model
+num_topics = 10
+lda = LDA(k=num_topics, maxIter=30, featuresCol="features")
+
+# Step 6: Create a pipeline
+pipeline = Pipeline(stages=[tokenizer, stopwords_remover, count_vectorizer_model, idf_model, lda])
+```
+
+
+```{python}
+#| eval: true
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+df_cleaned = pd.read_csv("../data/csv/cleaned_text.csv")
+df_cleaned["cleaned_text"] = df_cleaned["cleaned_text"].astype(str)
+text = " ".join(df_cleaned["cleaned_text"])
+
+# Generate a WordCloud
+wordcloud = WordCloud(width=800, height=400, background_color="white").generate(text)
+
+# Display the WordCloud
+plt.figure(figsize=(10, 5))
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+#plt.savefig("../data/plots/submission_wordcloud.png")
+plt.show()
+```
+
+From the wordcloud above, we can see that in the MBTI related submission titles, the most frequent words are "type", "personality", "mbti'. It is reasonable to have these words in MBTI related Reddit posts. Besides, the basic information of the MBTI types are also frequently mentioned in the titles, such as "intj", "enfp", "infj", "entp", "intp", "enfj", "istp", "istj", "entj", "isfp", "infp", "estp", "isfj", "estj", "esfp", "esfj".We may infer that Reddit users like to post submissions to ask what people think about their MBTI types and guess what the MBTI types of others are. 
+
+## 2.3 Important words with TF-IDF
+
+Term Frequency-Inverse Document Frequency (TF-IDF) is a crucial concept in natural language processing and information retrieval. It serves as a numerical statistic that reflects the significance of a term within a collection of documents. TF-IDF is calculated by combining two metrics: Term Frequency (TF), representing the frequency of a term within a specific document, and Inverse Document Frequency (IDF), measuring the rarity of the term across the entire document set. For each submission, the top 5 important words are selected from the tf-idf dataframe. We use the first 10 rows as an example. We can see that based on the top words in each row, type, mbti and think are important words in the submission.
+
+```{python}
+#| eval: true
+#| echo: false
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+df_tfidf = pd.read_csv("../data/csv/tf_idf.csv")
+df_tfidf_sub = df_tfidf[['submission_title','cleaned_text','top_words']]
+md = tabulate(df_tfidf_sub, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+## 2.4 Topic Modeling with LDA
+
+Latent Dirichlet Allocation (LDA) is a generative probabilistic model used for topic modeling. Topic modeling is a technique in natural language processing (NLP) that aims to automatically identify topics present in a text corpus. LDA is an unsupervised machine learning approach; it doesn’t need any training data. All it needs is a document-word matrix as input. So in order to have a more concise understanding of the topics discussed in Reddit related to MBTI, we use LDA to build a topic model. The expectation results of the LDA model is seperate topics with specific related topic words in each topic. The topic words in each topic should be related to a same topic. 
+
+```{python}
+#| eval: false
+from pyspark.ml.feature import CountVectorizer, IDF
+from pyspark.ml.clustering import LDA
+from pyspark.ml.feature import StopWordsRemover
+from pyspark.ml import Pipeline
+#Fit the pipeline to the data
+lda_model = pipeline.fit(df_cleaned)
+
+# Step 8: Get the topics and associated terms
+topics = lda_model.stages[-1].describeTopics()
+
+# Show the topics and associated terms
+print("LDA Topics:")
+topics.show(truncate=False)
+
+# Step 9: Transform the original DataFrame to include topic distributions
+df_lda_result = lda_model.transform(df_cleaned)
+
+# Show the LDA result DataFrame
+print("LDA Result DataFrame:")
+df_lda_result.select("id", "cleaned_text", "filtered_words", "topicDistribution").show(truncate=False)
+vocab_list = count_vectorizer_model.vocabulary
+topic_list = []
+for topic_row in topics.collect():
+    topic = topic_row.topic
+    indices = topic_row.termIndices
+    words = [vocab_list[idx] for idx in indices]
+    print(f"Topic {topic}: {', '.join(words)}")
+    topic_list.append( [', '.join(words)])
+topics_df = topics.toPandas()
+topics_df['topic_words']=topic_list
+```
+
+```{python}
+#| eval: true
+
+import seaborn as sns
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import ast
+# read the topic data
+topic_df = pd.read_csv("../data/csv/topic.csv")
+# transfer the data into appropriate format
+topic_df['termIndices'] = topic_df['termIndices'].apply(lambda x: [int(idx) for idx in x.strip('[]').split()])
+topic_df['termWeights'] = topic_df['termWeights'].apply(lambda x: [float(weight) for weight in x.strip('[]').replace('\n', '').split()])
+topic_df['topic_words'] = topic_df['topic_words'].apply(lambda x: ast.literal_eval(x)[0].split(', '))
+
+color_list = ['#1f80b8', '#2498c1', '#37acc3', '#52bcc2', '#73c8bd', '#97d6b9', '#bde5b5', '#d6efb3', '#eaf7b1', '#f5fbc4']
+
+# Create subplots with a smaller vertical_spacing
+fig = make_subplots(rows=5, cols=2, subplot_titles=[f"Topic {i}" for i in range(10)], vertical_spacing=0.05)
+
+# Define a function to create a bar chart for each topic
+def create_topic_plot(df, topic,color):
+    # Sort the weights in descending order while maintaining the association with the corresponding words
+    sorted_indices = sorted(range(len(df['termWeights'][topic])), key=lambda k: df['termWeights'][topic][k], reverse=False)
+    sorted_weights = [df['termWeights'][topic][i] for i in sorted_indices]
+    sorted_words = [df['topic_words'][topic][i] for i in sorted_indices]
+    
+    return go.Bar(
+        x=sorted_weights,
+        y=sorted_words,
+        orientation='h',
+        name=f'Topic {topic}',
+        marker_color=color  # Set the color of the bar
+    )
+
+# Add plots for each topic to the subplots
+for topic in topic_df['topic']:
+    row = (topic // 2) + 1
+    col = (topic % 2) + 1
+    # Use the modulo operator to cycle through the color list
+    color = color_list[topic % len(color_list)]
+    fig.add_trace(create_topic_plot(topic_df, topic, color), row=row, col=col)
+
+# Update layout to make the gap between subplots smaller
+fig.update_layout(
+    title_text="LDA Topic Weights Plot using Plotly",
+    title_x=0.5,  # This centers the title
+    height=1200,  # Adjusted for better spacing
+    showlegend=False,
+    margin=dict(l=20, r=20, b=20)  # Adjust margins to minimize white space
+)
+
+# Show the figure
+fig.show()
+```
+
+
+The topics inferred from the LDA model reveal intriguing insights into the content of Reddit submissions related to MBTI. Each topic is characterized by a dominant theme, shedding light on the diverse discussions within the community.
+
+- Topic 0: Users Seeking Common Ground
+    - Dominant Word: "User"
+    - Inference: The topic centers around Reddit users aiming for a shared understanding of MBTI types.
+
+- Topic 1: Family Dynamics and MBTI
+    - Dominant Theme: Family
+    - Inference: Discussions delve into the relationships between different MBTI types and their families.
+
+- Topic 2: Questioning the MBTI Universe
+    - Dominant Theme: Questions
+    - Inference: Topics revolve around a variety of questions related to MBTI.
+
+- Topic 3: Personal MBTI Experiences
+    - Dominant Theme: User MBTI Types
+    - Inference: Submissions primarily focus on users sharing their personal MBTI experiences.
+
+- Topic 4: Interpersonal Dynamics Between MBTI Types
+    - Dominant Theme: Relationships
+    - Inference: Conversations explore the dynamics between individuals with different MBTI types.
+
+- Topic 5: Exploring Thoughts and Friendships
+    - Dominant Theme: Thoughts
+    - Inference: Topics touch upon the thoughts of different MBTI types and potentially delve into friendships between them.
+
+- Topic 6: Speculating on MBTI Types
+    - Dominant Theme: Guess
+    - Inference: Discussions and speculations abound regarding guessing the MBTI types of individuals.
+
+- Topic 7: Love Lives and Social Status Across MBTI Types
+    - Dominant Themes: Love, Social Status
+    - Inference: Conversations explore the realms of love lives and social statuses associated with different MBTI types.
+
+- Topic 8: MBTI AMAs (Ask Me Anything)
+    - Dominant Theme: AMA
+    - Inference: Submissions where users inquire about anything related to a specific MBTI type.
+
+- Topic 9: Unpacking Cognitive Functions (N, I, F, T, E)
+    - Dominant Themes: N, I, F, T, E (Cognitive Functions)
+    - Inference: Discussions revolve around understanding the cognitive functions associated with different MBTI types.
+
+
+# NLP Topic 3: Linguistic Analysis
+
+> - **Business Goal:** Analyze linguistic patterns and topic preferences within the MBTI community by examining the diversity of language used in posts and identifying topics or keywords that resonate with each of the 16 MBTI personality types and the four dichotomous axes (I/E, N/S, T/F, J/P).
+> - **Technical Proposal:**
+> - Calculate metrics like Lexical Density, Lexical Variety, and Average Word Length for each post.
+Analyze the use of unique words and complexity of language for each MBTI type to assess the diversity in vocabulary, syntax, and readability among the posts of different MBTI types.
+> - Use frequency analysis to determine the most common words and phrases for each MBTI type and across the dichotomous axes.
+> - Develop visual representations, such as word clouds, to illustrate the unique language use and topic interests of each MBTI type and axis.
+
+Link to [Linguistic Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_linguistic.ipynb)
+
+Our comprehensive analysis delves into the intricate landscape of conversations within the MBTI community on Reddit. Moving beyond a general overview of the subjects predominantly discussed in relation to MBTI, our focus now shifts to a more nuanced exploration. We aim to unravel the specific topics and keywords that are most resonant with each of the 16 distinct MBTI personality types, as well as how these discussions align with the four dichotomous axes: Introversion (I) vs. Extraversion (E), Intuition (N) vs. Sensing (S), Feeling (F) vs. Thinking (T), and Judging (J) vs. Perceiving (P).
+
+
+
+## 3.1 Vocabulary Richness and Complexity Analysis
+
+In our endeavor to unravel the linguistic intricacies within the MBTI community on Reddit, a key focus lies in the **Vocabulary Richness** and **Complexity Analysis**. This segment of our study is dedicated to quantitatively assessing the diversity and sophistication of language used by individuals of different MBTI types. 
+
+We aim to calculate and analyze various metrics for each post, including **Lexical Density**, which measures the proportion of unique words to the total words, and **Lexical Variety**, which evaluates the range of different words used. Additionally, the **Average Word Length** will be considered to gauge the complexity of vocabulary. To complement these metrics, readability indices such as the **Gunning Fog Index** and the **Flesch-Kincaid Readability Tests** will be employed. These tools will help in determining the level of education required to comprehend the texts and the ease with which they can be read. 
+
+
+```{python}
+#| eval: false
+import numpy as np 
+import pandas as pd 
+import os
+import seaborn as sns
+from os import path
+from PIL import Image
+from collections import Counter 
+from wordcloud import WordCloud, STOPWORDS
+import matplotlib.pyplot as plt
+
+
+# Load the data 
+df_post = pd.read_csv('../data/csv/clean_post.csv')
+
+# split for different dichotomous axes
+df_post['I_E'] = df_post['type'].str[0]
+df_post['N_S'] = df_post['type'].str[1]
+df_post['T_F'] = df_post['type'].str[2]
+df_post['J_P'] = df_post['type'].str[3]
+
+df_post['post'] = df_post['post'].astype(str)
+df_post.head()
+
+import textstat
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.probability import FreqDist
+
+# Ensure you have the necessary NLTK data
+nltk.download('punkt')
+
+def analyze_post(post):
+    # Tokenize the post and calculate lexical diversity and word length
+    tokens = word_tokenize(post)
+    num_tokens = len(tokens)
+    num_unique_tokens = len(set(tokens))
+    avg_word_length = sum(len(word) for word in tokens) / num_tokens if num_tokens > 0 else 0
+    
+    # Lexical diversity is the ratio of unique tokens to total tokens
+    lexical_diversity = num_unique_tokens / num_tokens if num_tokens > 0 else 0
+    
+    # Readability scores
+    flesch_reading_ease = textstat.flesch_reading_ease(post)
+    gunning_fog = textstat.gunning_fog(post)
+
+    return {
+        "lexical_diversity": lexical_diversity,
+        "avg_word_length": avg_word_length,
+        "flesch_reading_ease": flesch_reading_ease,
+        "gunning_fog": gunning_fog
+    }
+
+# Apply the analysis to each post
+df_post['analysis'] = df_post['post'].apply(analyze_post)
+
+# Extracting each item in the 'analysis' into separate columns
+df_features = pd.json_normalize(df_post['analysis'])
+df_extended = pd.concat([df_post.drop('analysis', axis=1), df_features], axis=1)
+
+df_extended.head()  
+```
+
+
+```{python}
+#| eval: true
+#| echo: false
+#| output: true
+#| tbl-cap: Vocabulary Richness and Complexity 
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df_posts = pd.read_csv("../data/csv/post_diversity_analysis.csv")
+sub_df=df_posts[['type','post','lexical_diversity','avg_word_length','flesch_reading_ease','gunning_fog']]
+md = tabulate(sub_df.head(3), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+
+```
+
+
+After the processing for all the data, we now get the summary table for the analysis by grouping the types of MBTI.
+
+```{python}
+#| eval: true
+# Group by MBTI type and compute the average of each feature
+grouped_analysis = df_posts.groupby('type').mean().reset_index()
+grouped_analysis
+```
+
+### 3.1.1 Numerical Interpretation
+
+1. Lexical Diversity:
+
+    Higher lexical diversity implies a greater variety of vocabulary in the posts. The range is relatively narrow, indicating a fairly consistent use of diverse vocabulary across different MBTI types. Types like ENTP and ESFP show slightly higher diversity.
+
+2. Average Word Length:
+
+    Longer average word lengths can suggest a tendency to use more complex or formal language. Types like INTJ and INTP exhibit slightly longer average word lengths, potentially indicating a more complex language style.
+
+3. Flesch Reading Ease:
+
+    The Flesch Reading Ease score assesses text readability; higher scores indicate easier readability. Most MBTI types fall within a similar range, suggesting a general uniformity in readability. ESFP and ESTP types have higher scores, indicating their posts are slightly easier to read.
+
+4. Gunning Fog Index:**
+
+    This index estimates the years of formal education needed to understand the text on the first reading. A range of 7 to 8 suggests the text is relatively straightforward, suitable for individuals with around 7 to 8 years of education. Types like INTJ and INTP have slightly higher scores, suggesting their posts may use slightly more complex language.
+
+
+### 3.1.2 Insights Summary
+
+- Most posts, regardless of MBTI type, are written in a style that is relatively easy to read and understand.
+- Intuitive types (N), such as INTJ and INTP, tend to use slightly longer words and a bit more complexity in their language use.
+- The Sensor types (S), such as ESFP and ESTP, show a tendency towards more practical and accessible language.
+- Irrespective of specific type, generally communicates in a way that is diverse in vocabulary but still accessible, reflecting a balance between expressiveness and clarity.
+
+## 3.2 Word and Phrase Frequency Analysis
+
+To gain a more profound understanding of the communication styles prevalent among the MBTI community, our study incorporates a meticulous frequency analysis. This analysis is specifically designed to pinpoint the most frequently used words and phrases within the posts of each MBTI personality type.
+
+```{python}
+#| eval: false
+# remove the stopwords
+stopwords_list = set(STOPWORDS)
+# 'infj', 'entp', 'intp', 'intj', 'entj', 'enfj', 'infp', 'enfp', 'isfp', 'istp', 'isfj', 'istj', 'estp', 'esfp', 'estj', 'esfj', 
+words =['lot', 'time', 'love', 'actually', 'seem', 'need', 'infj', 'actually', 'pretty', 'sure', 'thought','type', 'one', 'even', 'someone', 'thing','make', 
+            'now', 'see', 'things', 'feel', 'think', 'i', 'people', 'know', '-', "much", "something", "will", "find", "go", "going", "need", 'still', 'though', 
+            'always', 'through', 'lot', 'time',  'really', 'want', 'way', 'never', 'find', 'say', 'it.', 'good', 'me.', 'many', 'first', 'wp', 'go', 
+            'really', 'much', 'why', 'youtube', 'right', 'know', 'want', 'tumblr', 'great', 'say', 'well', 'people', 'will', 'something', 'way', 'sure', 
+            'especially', 'thank', 'good', 'ye', 'person', 'https', 'watch', 'yes', 'got', 'take', 'person', 'life', 'might', 'me', 'me,', 'around', 'best', 'try', 
+            'maybe', 'probability', 'usually', 'sometimes', 'trying', 'read', 'us', 'may', 'use', 'work', ':)', 'said', 'two', 'makes', 'little', 'quite', 'u', 'intps', 'probably', 'made', 'it', 'seems', 'look', 'yeah',
+           'different', 'come', 'it,', 'friends', 'entps', 'different', 'esfjs', 'look', 'infjs', 'estps', 'kind', 'intjs', 'enfjs', 
+            'entjs', 'infps', 'every', 'long', 'tell', 'new', 'jpg','mean','year','thread']
+
+for word in words:
+    stopwords_list.add(word)
+
+import nltk
+from nltk.tokenize import word_tokenize, RegexpTokenizer
+from collections import Counter
+import string
+from nltk.corpus import stopwords
+
+
+# Define a function to process text, remove stopwords, contractions, MBTI types, and count top 20 words
+def process_text(posts, mbti_type):
+    stop_words = set(stopwords.words('english'))
+    tokenizer = RegexpTokenizer(r'\b[a-zA-Z]+\b')   # Tokenizer to remove punctuation
+
+    # Additional words to filter (MBTI types and common contractions)
+    additional_filters = set(['n\'t', '\'s', '\'m', '\'ve', '\'re', '\'ll', '\'d'] + list(mbti_type))
+
+    # Tokenize and filter out stopwords and additional filters
+    words = [word for post in posts for word in tokenizer.tokenize(post.lower()) 
+             if word not in stop_words and word not in stopwords_list and word not in additional_filters]
+    
+    # Count word frequency and keep only the top 20 words
+    word_freq = Counter(words).most_common(20)
+    
+    # Returning the top 20 words as a single string
+    return ', '.join([word for word, freq in word_freq])
+
+# Group by MBTI type and apply the function
+grouped_word_freq = df_post.groupby('type').apply(lambda x: process_text(x['post'], x.name))
+
+grouped_word_freq = grouped_word_freq.reset_index(name='top_words')
+
+```
+
+
+
+```{python}
+#| eval: true
+#| echo: false
+#| output: true
+#| tbl-cap: Sentiment Labels Group by Count
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+
+
+df = pd.read_csv("../data/csv/post_word_freq.csv")
+md = tabulate(df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+#### Common points:
+
+**Social relationships:** The high-frequency words of most personality types include words indicating social relationships, such as "friend", "relationship", etc. This shows that on social media, regardless of MBTI, people generally tend to discuss relationships with relationships. Related topics, this may also be the meaning of this topic, to summarize and discuss the interpersonal relationships of different MBTIs.
+
+**Positive emotions:** Positive emotion words such as “happy” and “thanks” appear in many types of lists, which may reflect people’s tendency to share positive emotions and gratitude when discussing MBTI on social media.
+
+#### Differences:
+
+**Personality-specific topics:** Certain words seem to be more relevant to specific personality types. For example, INT types tend to use words such as "think" and "understand" that reflect introspection and logical analysis.
+Communication style: For example, Feeling types (e.g., ESFJ, ESFP) use words such as “lol” and “haha” that express humor or a light-hearted attitude, which may indicate that these types tend to be more informal and expressive in communication language.
+
+**MBTI’s relationship with social media:**
+The appearance of high-frequency words may reveal the behavior patterns of different personality types on social media. For example, intuitive individuals (N) may discuss more ideas and theories (such as "idea", "theory"), while sensing individuals (S) may focus more on concrete and practical details.
+
+## 3.3 World Cloud for Topic Interests
+
+
+```{python}
+#| eval: false
+from wordcloud import WordCloud, STOPWORDS
+# remove the stopwords
+stopwords_list = set(STOPWORDS)
+# 'infj', 'entp', 'intp', 'intj', 'entj', 'enfj', 'infp', 'enfp', 'isfp', 'istp', 'isfj', 'istj', 'estp', 'esfp', 'estj', 'esfj', 
+words =['lot', 'time', 'love', 'actually', 'seem', 'need', 'infj', 'actually', 'pretty', 'sure', 'thought','type', 'one', 'even', 'someone', 'thing','make', 
+            'now', 'see', 'things', 'feel', 'think', 'i', 'people', 'know', '-', "much", "something", "will", "find", "go", "going", "need", 'still', 'though', 
+            'always', 'through', 'lot', 'time',  'really', 'want', 'way', 'never', 'find', 'say', 'it.', 'good', 'me.', 'many', 'first', 'wp', 'go', 
+            'really', 'much', 'why', 'youtube', 'right', 'know', 'want', 'tumblr', 'great', 'say', 'well', 'people', 'will', 'something', 'way', 'sure', 
+            'especially', 'thank', 'good', 'ye', 'person', 'https', 'watch', 'yes', 'got', 'take', 'person', 'life', 'might', 'me', 'me,', 'around', 'best', 'try', 
+            'maybe', 'probability', 'usually', 'sometimes', 'trying', 'read', 'us', 'may', 'use', 'work', ':)', 'said', 'two', 'makes', 'little', 'quite', 'u', 'intps', 'probably', 'made', 'it', 'seems', 'look', 'yeah',
+           'different', 'come', 'it,', 'friends', 'entps', 'different', 'esfjs', 'look', 'infjs', 'estps', 'kind', 'intjs', 'enfjs', 
+            'entjs', 'infps', 'every', 'long', 'tell', 'new', 'jpg','mean','year','thread']
+
+for word in words:
+    stopwords_list.add(word)
+
+
+# Define list for dichotomous axes
+mbtiaxes_list = ['I_E', 'N_S', 'T_F', 'J_P']
+types_list = [['I','E'],['N','S'],['T','F'],['J','P']]
+
+for n in range(4):
+    # Create a figure with 2 subplots
+    fig, axes = plt.subplots(1, 2, figsize=(36, 10)) # Two subplots side by side
+    sns.set_context('talk')
+
+    mbtiaxes = mbtiaxes_list[n]
+    types = types_list[n]
+
+    for m in range(2):
+        text_I = "".join(str(i) for i in df_posts[df_posts[mbtiaxes]== types[m]].post)
+        text_I = text_I.lower()
+        wordcloud_I = WordCloud(background_color='white', width=800, height=400, stopwords=stopwords_list, max_words=100, repeat=False, min_word_length=4).generate(text_I)
+        axes[m].imshow(wordcloud_I, interpolation='bilinear')
+        axes[m].axis('off')
+        axes[m].set_title('Most common tokenized words for ' + types[m], fontsize=25)
+
+        # Save the entire figure
+        #plt.savefig('mbti_token_clouds.png')
+
+    # Display the plot
+    plt.show()
+```
+
+
+![Quantile value to divide comment score.](../data/plots/I_E_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/N_S_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/T_F_mbti_token_clouds.jpg)
+![Quantile value to divide comment score.](../data/plots/J_P_mbti_token_clouds.jpg)
+
+
+
+**I-E (Introversion vs. Extraversion):**
+- Common: Both highlight “post” and “friend,” meaning that people regardless of whether they are introverts or extroverts value sharing and relationships on social media.
+- Difference: Extraverted types may use "lol" and "thanks" more, which suggests that extroverts may be more active on social media and tend to use more words that indicate positive emotions and social interactions.
+
+**N-S (Intuition vs. Sensing):**
+- Common: Both focus on “feel” and “think,” indicating that both intuitive and sensing types express their thoughts and emotions on social media.
+- Difference: Intuitive types are more likely to use "idea" and "understand," which reflects their tendency to discuss concepts and understand deeper meanings, while sensing types are more likely to use concrete, everyday words such as "school" and "work."
+
+**T-F (Thinking vs. Feeling):**
+- Common: Both use “friend” and “relationship”, showing that both thinking and feeling types value interpersonal relationships on social media.
+- Difference: Feeling types may use "happy" and "feel" more, emphasizing emotion and interpersonal harmony, while Thinking types may use more "question" and "point," indicating that they focus more on logic and analysis on social media .
+
+**J-P (Judging vs. Perceiving):**
+- Common: Both use "post" and "think" frequently, indicating that people with both judging and perceiving types will share their thoughts on social media.
+- Difference: Judging types may be more inclined to use "help" and "plan", which may be related to their pursuit of organization and structure; while perceiving types may be more inclined to use "guess" and "question", showing that they are more open and open-minded. Flexible attitude.
+
+In summary, both ends of each personality dimension have unique communication patterns and concerns, but there are also some common social media behaviors. These analyzes can help us better understand how different individuals express themselves and interact in digital spaces.
+
+
+# Executive summary
+
+
+Our NLP project targeting the MBTI subreddit community achieved significant insights in three core areas:
+
+1. **Sentiment Analysis and Comment Scoring**: The refined analysis of the MBTI subreddit discussions, based on percentage distribution of sentiments across different score categories, reveals an overarching positive sentiment, transcending initial presumptions based on raw counts. Notably, positive sentiment constitutes a significant majority in all categories, with 'Low' at 62.88%, 'Medium' at 69.27%, and 'Very High' at 65.99%, while 'High' also maintains a majority at 68.22%. This insight underscores an intrinsic positivity bias within the community interactions, suggesting that regardless of engagement level—be it low or very high—affirmative and supportive comments are more prevalent, shaping the MBTI subreddit as a predominantly positive space for discourse.
+
+2. **Topic Modeling in MBTI Discussions**: Our advanced NLP techniques uncovered a range of themes within the subreddit, from users seeking common ground to detailed discussions on family dynamics and personal MBTI experiences. Notably, themes like 'Interpersonal Dynamics Between MBTI Types' and 'Questioning the MBTI Universe' highlighted the community's deep dive into understanding personality interactions and theoretical aspects of MBTI. This revealed the depth and diversity of discussions, reflecting the community's broad spectrum of interests.
+
+3. **Linguistic Patterns and Topic Preferences Analysis**: Our analysis indicated that, irrespective of MBTI type, most posts were easily comprehensible, with intuitive types (N) using more complex language. The study also found distinct communication styles and concerns among different personality types, all sharing a common ground in discussing relationships and emotions. For instance, Thinking types (T) displayed a more analytical style, while Feeling types (F) exhibited a more expressive mode of communication. This provided a comprehensive view of the unique linguistic styles and topic preferences across the MBTI spectrum.
+
+In summary, these insights offer a profound understanding of the MBTI subreddit community, highlighting the diverse sentiment trends, topical interests, and linguistic styles across different personality types. 

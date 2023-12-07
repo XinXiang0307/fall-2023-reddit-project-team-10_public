@@ -1,0 +1,843 @@
+---
+title: Milestone 3 ML
+author:
+  - Project Team 10
+  - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
+---
+
+![](imgs/ml.jpg)
+
+# Analysis Report
+
+# ML Topic 1: Regression Analysis
+
+## 1.1 Analysis Goal
+
+In this analysis, our objective is to employ the MBTI Health Dataset for fitting a linear regression model that predicts an individual's total pain range, which spans from 0 to 40. This model will incorporate a variety of explanatory variables: physical attributes (height, weight, activity level), basic demographic information (age, sex), and personality traits as indicated by the Myers-Briggs Type Indicator (MBTI). The MBTI results are expressed through a combination of dichotomous traits—Extraversion (E) vs. Introversion (I), Sensing (S) vs. Intuition (N), Thinking (T) vs. Feeling (F), and Judging (J) vs. Perceiving (P)—each assigned a level between 0 and 26. Due to the complementary nature of these traits (e.g., a score of 16 in E implies a score of 10 in I), to prevent multicollinearity, we will include only one trait from each dichotomy in our model, specifically E, S, T, and J. Our goal is to explore how various factors, including posture, impact an individual's pain level and to ascertain if specific MBTI characteristics significantly influence this pain level.
+
+Link to [Regression Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_regression.ipynb)
+
+
+## 1.2 Data Preprocessing
+
+### 1.2.1 Create Total Pain Variable
+In the initial phase of our data preprocessing, we computed a 'total pain' variable by summing four discrete pain measurements—neck, thoracic, lumbar, and sacral areas—each ranging from 0 to 10. This integrated variable therefore extends from 0 to 40. To streamline our dataset and avert multicollinearity, we subsequently removed the original quartet of pain variables.
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Data with Total_pain
+import pandas as pd
+from tabulate import tabulate
+import IPython.display as d
+df = pd.read_csv("../data/csv/health_total_health.csv")
+df_subset = df[['AGE','HEIGHT','WEIGHT','SEX','ACTIVITY LEVEL','E','I','S','N','T','F','J','P','POSTURE','total_pain']]
+md = tabulate(df_subset.head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+### 1.2.2 Correlation Matrix
+Subsequently, we performed a correlation analysis on the numerical variables, namely 'AGE', 'HEIGHT', 'WEIGHT', 'E', 'I', 'S', 'N', 'T', 'F', 'J', 'P', and 'total_pain', visualizing the interrelations through a heatmap. This matrix  shows the degree of correlation, which we aimed to keep minimal among independent variables, while anticipating a robust linkage with the dependent variable. The heatmap confirms our premise; the MBTI dichotomous traits exhibit significant intercorrelations, validating our approach to retain only one attribute from each opposing pair in the regression model.
+
+![Correlation Matrix Heatmap: Illuminating the Interdependence of Physical, Demographic, and Personality Traits in Relation to Total Pain](../data/plots/cor_matrix.png)
+
+### 1.2.3 One-Hot Encoding and Define Pipeline 
+The final stride in data preprocessing entailed the one-hot encoding of categorical variables such as 'SEX', 'ACTIVITY LEVEL', and 'POSTURE'. Utilizing StringIndexer to convert strings to numerical indices and OneHotEncoder to map these indices to binary vectors, we constructed and integrated a pipeline to ensure the procedure is replicable for future datasets. The original categorical levels and their encoded counterparts are explicitly detailed for full transparency.
+
+```{python}
+#| eval: false
+from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler
+from pyspark.ml import Pipeline
+
+# Define the columns to be one-hot encoded
+categoricalColumns = ["SEX", "ACTIVITY LEVEL","POSTURE"]
+
+# Define the stages of the pipeline
+stages = []
+
+# Create and display the mappings for each categorical column
+for categoricalCol in categoricalColumns:
+    # StringIndexer: convert strings to label indices
+    stringIndexer = StringIndexer(inputCol=categoricalCol, outputCol=categoricalCol + "Index")
+    
+    # Fit and transform to display the mapping
+    indexed = stringIndexer.fit(health).transform(health)
+    indexed.select(categoricalCol, categoricalCol + "Index").distinct().show()
+    
+    # OneHotEncoder: encode label indices to binary vectors
+    encoder = OneHotEncoder(inputCols=[stringIndexer.getOutputCol()], outputCols=[categoricalCol + "OHE"])
+    
+    stages += [stringIndexer, encoder]
+
+# Apply the stages in a pipeline to transform the DataFrame
+pipeline = Pipeline(stages=stages)
+pipelineModel = pipeline.fit(health)
+df_transformed = pipelineModel.transform(health)
+
+pipeline_model_path = "Users/ml2078/fall-2023-reddit-project-team-10/pipeline"
+pipelineModel.save(pipeline_model_path)
+```
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: One-Hot Encoded Columns
+df_subset = df[['SEXOHE','ACTIVITY LEVELOHE','POSTUREOHE']]
+md = tabulate(df_subset.head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+::: {#tbl-panel layout-ncol=3}
+| Sex | SEXIndex |
+|------|------|
+| Male   | 1.0    |
+| Female    | 0.0    |
+
+: Sex {#tbl-first}
+
+| ACTIVITY LEVEL | ACTIVITY LEVEL Index |
+|------|------|
+| Moderate    | 1.0    |
+| Low    | 0.0    |
+| High    | 2.0    |
+
+: ACTIVITY LEVEL {#tbl-second}
+
+| POSTURE | POSTURE index |
+|------|------|
+| A    | 1.0    |
+| B    | 0.0    |
+| C    | 3.0    |
+| D    | 2.0    |
+
+: POSTURE {#tbl-second}
+
+One-Hot Encoding Mapping
+:::
+
+## 1.3 Build Linear Regression Model
+
+To construct our linear regression model, we began by identifying the predictors: ["AGE", "HEIGHT", "WEIGHT", "SEX_OHE", "ACTIVITY_LEVEL_OHE", "E", "S", "T", "J", "POSTURE_OHE"]. It's crucial to note that for categorical variables such as 'SEX', 'ACTIVITY LEVEL', and 'POSTURE', we utilized their one-hot encoded representations to fit the requirements of the model for vector inputs. We then used the VectorAssembler to combine these features into a singular vector column.This process ensured that the data for each observation were consolidated into extensive vectors, ready for model ingestion.
+
+Following this, we partitioned the dataset, allocating 80% for training and reserving 20% for testing purposes, in order to evaluate the model's performance on unseen data. The coefficients derived from the model are summarized in the table below, indicating the influence of each predictor on the total pain outcome.
+
+```{python}
+#| eval: false
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.regression import LinearRegression
+
+# Define the columns to be used as features
+featureCols = ["AGE", "HEIGHT", "WEIGHT", "SEXOHE", "ACTIVITY LEVELOHE", "E", "S", "T", "J","POSTUREOHE"]
+
+# Assemble the features into a single vector column
+assembler = VectorAssembler(inputCols=featureCols, outputCol="features")
+assembled_df = assembler.transform(df_transformed)
+
+# Show the header of the new DataFrame
+assembled_df.select("features").show(truncate=False)
+
+# Split the data into training and test sets
+trainData, testData = assembled_df.randomSplit([0.8, 0.2], seed=42)
+# Show the header of the training and test data
+trainData.select("features").show(truncate=False)
+testData.select("features").show(truncate=False)
+
+# Define the regression model
+lr = LinearRegression(labelCol="total_pain")
+
+# Train the model
+lrModel = lr.fit(trainData)
+
+# Print the coefficients and intercept for linear regression
+print("Coefficients: " + str(lrModel.coefficients))
+print("Intercept: " + str(lrModel.intercept))
+```
+
+::: {#tbl-panel layout-ncol=1}
+```{python}
+#| eval: true
+#| echo: false
+df = pd.read_csv("../data/csv/reg_coeff_df.csv")
+md = tabulate(df, headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+Table 2: Coefficient Table Summary
+:::
+
+### 1.3.1 Interpretations on the coefficients
+- Age: The positive coefficient (0.0318) suggests that as age increases, so does the total pain score, albeit slightly.This indicates a gradual increase in pain with aging.
+
+- Height: The negative coefficient (-0.1996) implies that taller individuals are likely to report lower pain scores, possibly due to biomechanical advantages or differences in body composition.
+
+- Weight: With a coefficient of 0.0431, there's a slight positive association, indicating heavier individuals might experience more pain, which could be attributed to the additional stress on the body.
+
+- Sex (Male): The coefficient for males is significantly positive (3.2555), indicating that being male is associated with a higher pain score compared to the baseline of being female in this model. This could reflect differences in pain perception or reporting between genders.
+
+- Activity Level: Participants with a 'Moderate' activity level have a negative coefficient (-2.8849), suggesting they report less pain compared to those with a 'Low' activity level, potentially due to better physical conditioning. Conversely, a 'High' activity level has a positive but smaller effect (0.6074), indicating increased pain, which might be due to more intense physical exertion.
+
+- MBTI Traits (E, S, T, J):
+
+    - 'E' (Extraversion) has a small positive coefficient (0.0578), hinting that more extraverted individuals might experience slightly more pain.
+    - 'S' (Sensing) shows a negative relationship (-0.1836) with total pain, which might suggest that individuals who are more grounded in sensory experience report less pain.
+    - 'T' (Thinking) has a positive coefficient (0.1352), which could imply a cognitive association with experiencing more pain.
+    - 'J' (Judging) also has a positive coefficient (0.2159), possibly indicating that those with a more structured lifestyle might report higher pain levels.
+- Posture:
+    - 'Posture A' has a positive coefficient (1.3821), suggesting that this particular posture correlates with higher pain scores.
+    - 'Posture D', however, is associated with a significantly lower pain score (-4.2853), indicating that it might be a more comfortable or ergonomically favorable posture.
+    - 'Posture C' has the highest positive coefficient (3.4091), indicating a strong association with increased pain levels.
+
+## 1.4 Model Performance Evaluation
+
+In the final stage of our model assessment, we scrutinized the regression's efficacy through two pivotal metrics: the Root Mean Squared Error (RMSE) and the coefficient of determination, R2. The RMSE for our training data was recorded at 6.42895, which, as anticipated, is lower than the RMSE for our testing data, measured at 9.91801. This discrepancy is not uncommon, as models tend to perform better on the data they were trained on due to their familiarity with the dataset's nuances. More crucially, the R2 value for our model stands at 0.2364, signifying that approximately 23.64% of the variance in the dependent variable—total pain—is accounted for by the independent variables in our model. 
+
+```{python}
+#| eval: false
+from pyspark.ml.evaluation import RegressionEvaluator
+
+# Make predictions
+predictions = lrModel.transform(testData)
+
+# Show some predictions
+predictions.select("prediction", "total_pain", "features").show(5)
+
+# Evaluate the model
+evaluator = RegressionEvaluator(labelCol="total_pain", predictionCol="prediction", metricName="rmse")
+rmse = evaluator.evaluate(predictions)
+
+
+# Make predictions
+predictions = lrModel.transform(trainData)
+
+# Show some predictions
+predictions.select("prediction", "total_pain", "features").show(5)
+
+# Evaluate the model
+evaluator = RegressionEvaluator(labelCol="total_pain", predictionCol="prediction", metricName="rmse")
+rmse = evaluator.evaluate(predictions)
+
+# Make predictions
+predictions = lrModel.transform(trainData)
+# Create an instance of RegressionEvaluator for evaluating R2
+evaluator = RegressionEvaluator(labelCol="total_pain", predictionCol="prediction", metricName="r2")
+
+# Compute R2 on test data
+r2 = evaluator.evaluate(predictions)
+```
+
+::: {layout-ncol=1}
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Train Predictions
+df = pd.read_csv("../data/csv/train_predictions.csv")
+md = tabulate(df[['features','total_pain','prediction']].head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Test Predictions
+df = pd.read_csv("../data/csv/test_predictions.csv")
+md = tabulate(df[['features','total_pain','prediction']].head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+:::
+
+```{python}
+#| eval: true
+#| echo: false
+print("Root Mean Squared Error (RMSE) on train data = 6.42895")
+print("Root Mean Squared Error (RMSE) on test data = 9.91801")
+print("R2 = 0.2364")
+```
+
+## 1.5 Apply Model to New Data
+
+Upon successfully training our linear regression model with the original dataset, we proceeded to serialize and store the model for future use. When faced with new, unseen data, our first step was to construct five novel data points, ensuring consistency in variable naming conventions as per the trained model's specifications.
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: New Data
+df = pd.read_csv("../data/csv/new_data_df.csv")
+md = tabulate(df.head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+Subsequently, we utilized the previously established pipeline—now recalled from storage—to efficiently one-hot encode the categorical variables within this fresh dataset. The use of this pre-defined pipeline not only preserved coherence in data processing but also proved to be a time-saving measure. With the new data duly processed, we used the VectorAssembler once again to collate the features into a single vector column, thereby preparing the data in the exact format required for our model. We then fed this prepared vector into our pre-trained linear regression model to generate predictions. The model's predictions, which are the inferred pain levels based on the input features, are as follows:
+
+```{python}
+#| eval: false
+from pyspark.sql import Row
+from pyspark.ml import Pipeline
+
+# Example new data rows
+new_data_rows = [
+    Row(AGE=50, HEIGHT=62, WEIGHT=140, SEX="Male", ACTIVITY_LEVEL="Moderate", E=12, S=15, T=20, J=5,POSTURE="B"),
+    Row(AGE=30, HEIGHT=66, WEIGHT=100, SEX="Female", ACTIVITY_LEVEL="Low", E=18, S=12, T=15, J=8,POSTURE="C"),
+    Row(AGE=35, HEIGHT=71, WEIGHT=160, SEX="Male", ACTIVITY_LEVEL="High", E=10, S=3, T=10, J=3,POSTURE="A"),
+    Row(AGE=44, HEIGHT=63, WEIGHT=130, SEX="Male", ACTIVITY_LEVEL="High", E=6, S=9, T=8, J=10,POSTURE="D"),
+    Row(AGE=48, HEIGHT=61, WEIGHT=120, SEX="Female", ACTIVITY_LEVEL="Low", E=3, S=17, T=5, J=20,POSTURE="B"),
+]
+
+# Create a DataFrame with the new data
+new_data_df = spark.createDataFrame(new_data_rows)
+
+# Load the pipeline model
+loaded_pipeline_model = PipelineModel.load("Users/ml2078/fall-2023-reddit-project-team-10/pipeline")
+
+# Use the loaded pipeline model to transform new data
+df_transformed_new = loaded_pipeline_model.transform(new_data_df)
+```
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: New Data Predictions
+df = pd.read_csv("../data/csv/new_data_prediction.csv")
+md = tabulate(df[['features','prediction']].head(), headers='keys', tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+
+
+# ML Topic 2: Association Rules Analysis
+
+## 2.1 Analysis Goal
+
+In this study, we aim to delve into MBTI-related comments on Reddit and external data with the aim of revealing the extent to which different MBTI personality types are associated with each other in everyone's discussions. At the core of this analytical journey is the exploration of the interconnections between communication styles and expressions specific to various personality types in the digital environment. By employing FP-Growth modeling to dissect and analyze text data on Reddit and external data, our goal is not only to identify frequent item sets and association rules between MBTI types, but also to understand how these traits influence online conversations. The ultimate goal is to present these relationships through intuitive association rule network graphs, leading to a deeper understanding of how different personality types converge and diverge in the realm of digital communication.
+
+Link to [Association Rules Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_ARM.ipynb)
+
+
+## 2.2 Data Preprocessing
+
+### 2.2.1 Text Preprocessing
+
+In the text preprocessing, we focus on extracting MBTI type-related information from the textual content of comments on Reddit as well as from external data sources. By identifying keywords associated with the 16 MBTI types, we have created a new column titled "mbti_type_related," which will serve as the foundation for subsequent association rule learning. During this process, for comments that do not contain any identifiable MBTI type information, we have designated their "mbti_type_related" column as "general." We will further filter the data in subsequent steps to ensure that each comment in our final dataset mentions at least one or more MBTI types.
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import udf, when,col
+from pyspark.sql.types import StringType
+import re
+
+# List of personality types in uppercase
+personality_types = ["ESTJ", "ISTJ", "INFP", "ENFP", "INTJ", "ENTJ", "INTP", "ENTP",
+                    "ESFJ", "ISFJ", "ENFJ", "INFJ", "ESFP", "ISFP", "ISTP", "ESTP"]
+
+# Convert the list to a regex pattern with case-insensitive flag
+pattern = "(?i)\\b(" + "|".join(personality_types) + ")\\b"
+
+# Define UDF to extract all matches
+def extract_all_types(title):
+    matches = re.findall(pattern, title, re.IGNORECASE)
+    # Convert matches to uppercase
+    matches_upper = [match.upper() for match in matches]
+    return ', '.join(matches_upper)
+
+extract_all_types_udf = udf(extract_all_types, StringType())
+
+# Apply UDF to get all MBTI types
+comment_load = comment_load.withColumn("mbti_type_related_temp", extract_all_types_udf(col("comment_text")))
+
+# Set 'mbti_type_related' to 'general' for empty matches
+comment_load = comment_load.withColumn("mbti_type_related",
+                                         when(col("mbti_type_related_temp") == "", "general")
+                                         .otherwise(col("mbti_type_related_temp")))
+
+# Drop the temporary column
+comment_load = comment_load.drop("mbti_type_related_temp")
+```
+
+Following the initial preprocessing of the data, the focus of this phase is on the preliminary presentation of the processed data. As demonstrated by the results, we have successfully extracted MBTI-related information from the textual content. The completion of this step marks a significant milestone in our data processing workflow.
+
+```{python}
+#| eval: true
+#| echo: false
+from tabulate import tabulate
+import IPython.display as d
+import pandas as pd
+comment_load = pd.read_csv("../data/csv/comment_with_type_head.csv")
+md = tabulate(comment_load.head(4),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+In this stage, we apply the same data preprocessing approach to the external dataset that was used for the Reddit dataset. Consistent with the procedure for the Reddit data, we have also created a column named "mbti_type_related" for the external dataset. This approach is intended to facilitate the seamless merging of these two datasets in subsequent steps.
+
+### 2.2.2 Merge the Reddit and extrual data
+
+In this step, we merge the two datasets and filter out only the columns necessary for the subsequent association rule learning process, discarding all irrelevant data. This action is aimed at optimizing our analysis process, allowing us to more effectively explore the correlations between various MBTI types in data sourced from multiple origins. By integrating different datasets, we not only enhance the comprehensiveness of our analysis but also improve its overall interpretability. As of now, the consolidated dataset for association rule learning comprises a total of 540,780 rows.
+
+```{python}
+#| eval: false
+from pyspark.sql import SparkSession
+
+# Convert Pandas DataFrame to PySpark DataFrame
+mbti_in_post_spark = spark.createDataFrame(mbti_in_post_df)
+
+mbti_in_post_spark.show()
+
+#merge the data by column name
+combined_df = arm_comment.unionByName(mbti_in_post_spark)
+combined_df.printSchema()
+
+#print the number of the row
+row_count = combined_df.count()
+print("Number of rows:", row_count)
+```
+
+```{python}
+#| eval: true
+#| echo: false
+combined_text = pd.read_csv("../data/csv/combined_text_arm.csv")
+md = tabulate(combined_text.head(),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+## 2.3 Build FP-Growth Model
+
+In the FP-Growth model construction phase, our main goal is to utilize the FP-Growth algorithm to deeply explore and identify frequent itemsets and association rules in MBTI-type correlation data. FP-Growth, or Frequent Pattern Growth Algorithm, is an efficient method to mine frequent itemsets, which has the advantage of avoiding the generation of candidate itemsets, thus significantly reducing the computational amount of computation. This algorithm is especially suitable for processing large data sets and can effectively discover patterns and relationships in the data.
+
+When applying the FP-Growth algorithm, we will first set appropriate thresholds for minSupport and minConfidence. Support is used to measure how often the itemset appears in all transactions, while confidence measures the reliability of the rule. With these parameters, we are able to filter out less significant itemsets and rules, thus focusing on analyzing those patterns that are most statistically significant.
+
+The algorithm will then identify frequent itemsets in the dataset and generate association rules based on these itemsets. These rules will help us understand how different MBTI types combine and correlate, revealing the underlying relationships behind user behaviors and tendencies. For example, we may find that specific combinations of MBTI types tend to appear frequently in discussions, or that certain types of people are more inclined to discuss specific topics.
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import split
+
+# Split strings into lists
+combined_df = combined_df.withColumn("mbti_type_related", split(combined_df["mbti_type_related"], ", "))
+
+from pyspark.sql.functions import array_distinct
+combined_df = combined_df.withColumn("mbti_type_related", array_distinct("mbti_type_related"))
+
+from pyspark.ml.fpm import FPGrowth
+
+# Create FP-Growth models
+fpGrowth = FPGrowth(itemsCol="mbti_type_related", minSupport=0.01, minConfidence=0.1)
+
+# Training models
+model = fpGrowth.fit(combined_df)
+
+# View frequent itemsets
+model.freqItemsets.show()
+
+# check the associationRules
+model.associationRules.show()
+```
+
+Since throughout our session, we preferred to discover the probability of another item occurring if the ISTP(or others) is known to occur, we use confidence for ranking here.
+
+```{python}
+#| eval: false
+from pyspark.sql.functions import col
+
+# Sorted in descending order of confidence
+conf_rules = model.associationRules.orderBy(col("confidence").desc())
+
+# Show these rules
+conf_rules.show()
+
+# Sorted in descending order of lift
+lift_rules = model.associationRules.orderBy(col("lift").desc())
+
+# Show these rules
+lift_rules.show()
+```
+
+But lift is also a good measure of whether this rule is valid and really relevant, so check this in descending order as well.
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Association rules order by Confidence
+ordered_arm = pd.read_csv("../data/csv/ordered_association_rules.csv")
+md = tabulate(ordered_arm.head(),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+```{python}
+#| eval: true
+#| echo: false
+#| tbl-cap: Association rules order by Lift
+lift_arm = pd.read_csv("../data/csv/lift_association_rules.csv")
+md = tabulate(lift_arm.head(),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md)
+```
+
+A brief description of these indicators and an analysis of the first five rules in the dataset are presented below:
+
+Confidence: this indicates the conditional probability of the occurrence of the latter item when the former item occurs. For example, the first rule has a confidence level of 0.235145, which means that when 'ISFP' occurs, there is about a 23.51% probability that 'INFP' will also occur.
+
+Lift: A lift greater than 1 means that there is a positive correlation between the antecedent and the consequent, i.e., they tend to occur together, and that this correlation is stronger than the probability of random occurrence. For example, the first rule has a lift of 1.313194, indicating that 'ISFP' and 'INFP' occur together more often than 'INFP' occurs alone.
+
+Support: This indicates how often the combination of the antecedent and the consequent occurs in all transactions. For example, the first rule has a support of 0.013567, indicating that 'ISFP' and 'INFP' together occur 1.3567% of all possible combinations.
+
+The first five rules are specifically analyzed:
+
+Rule 1: ISFP -> INFP
+
+- The high confidence level indicates that there is a relatively high probability that INFP will be mentioned in a discussion that mentions ISFP.
+
+Rule 2: ENFJ -> INFJ
+
+- The highest elevation means that ENFJ and INFJ occur together much more often than the random probability, suggesting that there may be a strong correlation between them.
+
+Rule 3: ESTP -> ENTP
+
+- The elevation is also high, suggesting that ESTP and ENTP may have a tendency to appear together in discussions.
+
+Rule 4: ISTJ -> INTJ
+
+- Both confidence and elevation suggest a correlation between ISTJ and INTJ.
+
+Rule 5: ENTJ -> INTJ
+
+- This rule shows that ENTJs and INTJs also occur together relatively frequently, and that when ENTJs occur, INTJs are also likely to occur.
+
+These rules can help us understand how certain personality types tend to be mentioned alongside others in MBTI discussions. For example, Sensing and Intuitive types may appear together in some discussions, reflecting the diversity of the discussion or the complementarity of these types in a given context. Similarly, the combination of Extraversion and Introversion may indicate discussions focused on specific social or introspective themes.
+
+## 2.4 Association Rule Network Graphs
+
+From the data extracted from the model, we have obtained two tables sorted by different criteria: one sorted by confidence and the other by lift. Given our research focus is on exploring the probability of the occurrence of one MBTI type given the presence of another, we have opted to use the table sorted by confidence for the subsequent construction of the network graph. This approach allows us to more accurately analyze and understand the direct correlations between different MBTI types.
+
+```{python}
+import pandas as pd
+import plotly.graph_objs as go
+import networkx as nx
+
+rules_pd=pd.read_csv("../data/csv/ordered_association_rules.csv")
+
+# Create a graph
+G = nx.DiGraph()
+
+# Add nodes and edges
+for _, row in rules_pd.iterrows():
+    G.add_edge(str(row['antecedent']), str(row['consequent']), weight=row['confidence'])
+
+# Generate position layout
+pos = nx.spring_layout(G)
+
+# Create edge trace
+edge_x = []
+edge_y = []
+for edge in G.edges():
+    x0, y0 = pos[edge[0]]
+    x1, y1 = pos[edge[1]]
+    edge_x.extend([x0, x1, None])
+    edge_y.extend([y0, y1, None])
+
+edge_trace = go.Scatter(
+    x=edge_x, y=edge_y,
+    line=dict(width=0.5, color='#888'),
+    hoverinfo='none',
+    mode='lines')
+
+# Create node trace
+node_x = []
+node_y = []
+for node in G.nodes():
+    x, y = pos[node]
+    node_x.append(x)
+    node_y.append(y)
+
+#color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+color_list=['#081d58','#253795','#1f80b8','#97d6b9','#ffffd9']
+
+node_trace = go.Scatter(
+    x=node_x, y=node_y,
+    mode='markers+text',  # Add 'text' to the mode
+    text=[node for node in G.nodes()],  # Add node labels
+    textposition="bottom center",  # Position of text
+    hoverinfo='text',
+    marker=dict(
+        showscale=True,
+        colorscale=color_list,
+        reversescale=True,
+        color=[],
+        size=15,  # Increase node size
+        colorbar=dict(
+            thickness=15,
+            title='Number of Node Connections',
+            xanchor='left',
+            titleside='right'
+        ),
+        line_width=1.5))
+
+# Add node text and hover info
+node_adjacencies = []
+node_text = []
+for node, adjacencies in enumerate(G.adjacency()):
+    node_adjacencies.append(len(adjacencies[1]))
+    node_text.append(f'{adjacencies[0]}')
+
+node_trace.marker.color = node_adjacencies
+node_trace.text = node_text
+
+# Create figure
+fig = go.Figure(data=[edge_trace, node_trace],
+             layout=go.Layout(
+                title='<br>Network graph of association rules',
+                titlefont_size=23,
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=20,l=5,r=5,t=80),
+                annotations=[dict(
+                    text="Python plotly library",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.005, y=-0.002)],
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                )
+
+fig.show()
+
+```
+
+From the network graph presented, it can be observed that the ENFP type has the highest degree of connectivity with other MBTI types, reaching a value of 5. Conversely, the ISFP, ESTP, and ISTJ types exhibit lower levels of connectivity. This finding indicates that within the spectrum of the 16 MBTI types, the ENFP type is relatively more active and is frequently mentioned in conjunction with other types during MBTI-related discussions. On the other hand, the ISFP, ISTJ, and ESTP types are less often mentioned simultaneously, reflecting a lower degree of connectivity.
+
+
+# ML Topic 3: Predictive Model Analysis
+
+## 3.1 Analysis Goal
+
+Develop a predictive model that can identify an individual's MBTI personality type based on their online text entries. 
+
+- Clean the text data to remove irrelevant information, such as special characters, URLs, and non-standard language elements.
+- Apply natural language processing techniques to tokenize, and remove stopwords from the text data for further analysis.
+- Train machine learning models (e.g., logistic regression, support vector machines, random forests to predict MBTI types based on the engineered features.
+- Define clear metrics to compare model performances, focusing on accuracy, F1 score, Precision, and Recall to measure the model's ability to classify the posts into different MBTI types.
+- Plot confusion matrices to analyze the model's performance in predicting each MBTI type.
+
+Link to [Predictive Model Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_prediction.ipynb)
+
+
+## 3.2 Data Preprocessing
+The original external dataset contains two columns which are the MBTI type and the posts.
+```{python}
+import IPython.display as d
+data_or = pd.read_csv("../data/csv/mbti_1.csv")
+md = tabulate(data_or.head(),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md) 
+```
+
+As the posts are mainly text data, the first step is to clean the text data. We use the following steps to clean the text data：
+
+- Convert the text data to lower case
+
+
+- Remove the punctuation
+
+
+- Remove the rows with na in the cleaned_text column
+
+
+```{python}
+#| eval: false
+import IPython.display as d
+data_pd = pd.read_csv("../data/csv/mbti_1.csv")
+data = spark.createDataFrame(data_pd)
+#convert to lower case
+df_cleaned = data.withColumn("cleaned_text", lower(col("posts")))
+# remove punctuation
+df_cleaned = df_cleaned.withColumn("cleaned_text", regexp_replace("cleaned_text", "[^a-zA-Z0-9\\s]", ""))
+# remove the rows with na in the cleaned_text column
+df_cleaned = df_cleaned.na.drop(subset=["cleaned_text"])
+```
+
+## 3.3 Build the pipeline for the classification model
+
+In order to build the classification model, we need to convert the text data into numeric data. We use the following steps to convert the text data into numeric data and we also split the data into training, testing, and validation sets. Besides, we also use Tokenizer and CountVectorizer to tokenize and vectorize the text data. We use the StringIndexer to convert the MBTI type column to a numeric type. 
+
+```{python}
+#| eval: false
+#load all the packages
+# Tokenize and Vectorize Text
+tokenizer = Tokenizer(inputCol="cleaned_text", outputCol="tokens")
+vectorizer = CountVectorizer(inputCol="tokens", outputCol="features")
+#  Convert the "type" column to a numeric type
+indexer = StringIndexer(inputCol="type", outputCol="label")
+# Split Data into Train, Test, and Validation Sets
+# Adjust the ratios based on your preference
+train_df, test_df, val_df = df_cleaned.randomSplit([0.8, 0.1, 0.1], seed=42)
+```
+
+### Build Logistic Regression Model, Support Vector Machine Model and Random Forest Model
+The first model we would like to build is a simple model, which is logistic regression model. We use the pipeline to build the models. The second model we want to build is a support vector machine model. As we have 16 labels in our task, we use the OneVsRest method to build the model. The last model we build is a random forest classifier model. We use the default parameters for the model.
+
+```{python}
+#| eval: false
+# Logistic Regression Classifier
+lr = LogisticRegression(labelCol="label", featuresCol="features")
+lr_pipeline = Pipeline(stages=[tokenizer, vectorizer,indexer, lr])
+lr_model = lr_pipeline.fit(train_df)
+lsvc = LinearSVC(maxIter=10)
+ovr = OneVsRest(classifier=lsvc, labelCol="label", featuresCol="features")
+ovr_pipeline = Pipeline(stages=[tokenizer, vectorizer, indexer, ovr])
+ovr_model = ovr_pipeline.fit(train_df)
+rf = RandomForestClassifier(labelCol="label", featuresCol="features", numTrees=10)
+rf_pipeline = Pipeline(stages=[tokenizer, vectorizer, indexer, rf])
+rf_model = rf_pipeline.fit(train_df)
+```
+
+
+## 3.4 Model Evaluation
+As the our task is a multi-class classification task, we use the accuracy, f1 score, precision and recall to evaluate the model performance.
+
+```{python}
+#| eval: false
+# Evaluate the Models
+evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
+f1_evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="f1")
+precision_evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="weightedPrecision")
+recall_evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="weightedRecall")
+# Evaluate Logistic Regression model
+lr_test_predictions = lr_model.transform(test_df)
+lr_val_predictions = lr_model.transform(val_df)
+lr_test_accuracy = evaluator.evaluate(lr_test_predictions)
+lr_test_f1_score = f1_evaluator.evaluate(lr_test_predictions)
+lr_test_precision = precision_evaluator.evaluate(lr_test_predictions)
+lr_test_recall = recall_evaluator.evaluate(lr_test_predictions)
+
+lr_val_accuracy = evaluator.evaluate(lr_val_predictions)
+lr_val_f1_score = f1_evaluator.evaluate(lr_val_predictions)
+lr_val_precision = precision_evaluator.evaluate(lr_val_predictions)
+lr_val_recall = recall_evaluator.evaluate(lr_val_predictions)
+
+# Evaluate Support Vector model
+ovr_test_predictions = ovr_model.transform(test_df)
+ovr_val_predictions = ovr_model.transform(val_df)
+ovr_test_accuracy = evaluator.evaluate(ovr_test_predictions)
+ovr_test_f1_score = f1_evaluator.evaluate(ovr_test_predictions)
+ovr_test_precision = precision_evaluator.evaluate(ovr_test_predictions)
+ovr_test_recall = recall_evaluator.evaluate(ovr_test_predictions)
+
+ovr_val_accuracy = evaluator.evaluate(ovr_val_predictions)
+ovr_val_f1_score = f1_evaluator.evaluate(ovr_val_predictions)
+ovr_val_precision = precision_evaluator.evaluate(ovr_val_predictions)
+ovr_val_recall = recall_evaluator.evaluate(ovr_val_predictions)
+# Evaluate RF model
+rf_test_predictions = rf_model.transform(test_df)
+rf_val_predictions = rf_model.transform(val_df)
+rf_test_accuracy = evaluator.evaluate(rf_test_predictions)
+rf_test_f1_score = f1_evaluator.evaluate(rf_test_predictions)
+rf_test_precision = precision_evaluator.evaluate(rf_test_predictions)
+rf_test_recall = recall_evaluator.evaluate(rf_test_predictions)
+
+rf_val_accuracy = evaluator.evaluate(rf_val_predictions)
+rf_val_f1_score = f1_evaluator.evaluate(rf_val_predictions)
+rf_val_precision = precision_evaluator.evaluate(rf_val_predictions)
+rf_val_recall = recall_evaluator.evaluate(rf_val_predictions)
+```
+
+The final classification results are shown in the table below.
+
+```{python}
+#| eval: true
+import pandas as pd
+res = pd.read_csv("../data/csv/ML_predict_results.csv", index_col=0)
+md = tabulate(res.head(),headers='keys',tablefmt='pipe',showindex=False)
+d.Markdown(md) 
+```
+
+Examining the performance metrics from the table reveals distinctive strengths and weaknesses among the models. The logistic regression model stands out with the highest test accuracy, reaching approximately 37.4%. On the other hand, the SVM model attains the highest F1 score, primarily driven by its exceptional precision.In the realm of the validation set, the SVM model emerges as the top performer across multiple metrics, boasting the highest accuracy, F1 score, precision, and recall. This suggests a robust overall performance for the SVM model on the validation data.Conversely, the random forest model demonstrates suboptimal results on both the test and validation sets, indicating potential challenges in capturing the underlying patterns of the data. 
+
+
+## 3.5 Confusion Matrix
+
+In order to analyze the classification results in more details, we plot the confusion matrix for the logistic regression model, SVM model and Random Forest model.
+
+### 3.5.1 Logistic Regression Confusion Matrix
+
+
+```{python}
+#| eval: true
+import pandas as pd
+import warnings
+# Suppress Matplotlib warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+lr = pd.read_csv("../data/csv/lr_test_confusion_matrix.csv",index_col=0)
+ovr = pd.read_csv("../data/csv/ovr_test_confusion_matrix.csv",index_col=0)
+rf = pd.read_csv("../data/csv/rf_test_confusion_matrix.csv",index_col=0)
+label_map = {0:'ENFJ',1:'ENFP',2:'ENTJ',3:'ENTP',4:'ESFJ',5:'ESFP',6:'ESTJ',7:'ESTP',8:'INFJ',9:'INFP',10:'INTJ',11:'INTP',12:'ISFJ',13:'ISFP',14:'ISTJ',15:'ISTP'}
+import matplotlib.pyplot as plt
+import seaborn as sns
+confusion_matrix = pd.pivot_table(lr, values='count', index='label', columns='prediction', fill_value=0)
+color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+# Create a heatmap using seaborn
+plt.figure(figsize=(8, 6))
+heatmap = sns.heatmap(confusion_matrix, annot=True, cmap=sns.color_palette(color_list), fmt='g', cbar=True)
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+heatmap.set_yticklabels([label_map[label] for label in confusion_matrix.index], rotation=0)
+heatmap.set_xticklabels([label_map[label] for label in confusion_matrix.columns], rotation=0)
+plt.title('Logitstic Regression Confusion Matrix Heatmap')
+#plt.savefig("../data/plots/LR_confusion_matrix.png")
+plt.show()
+```
+
+Based on the heatmap of the confusion matrix for the logistic regression model, notable performance trends emerge. The model demonstrates proficiency in accurately predicting labels for personality types such as ENFJ, ENFP, ENTJ, ESFJ, and ESFP, reflecting its robust performance in these cases. Conversely, the model exhibits shortcomings in predicting labels for ISFJ, ISFP, ISTJ, and ISTP, indicating suboptimal accuracy for these personality types.An inference can be drawn from these observations: the logistic regression model tends to achieve more accurate predictions for personality types falling under the EN category, while its accuracy diminishes when predicting personality types within the IS category. This discrepancy may arise from inherent differences in the linguistic patterns or content associated with EN and IS personalities, affecting the model's ability to generalize effectively.
+
+
+### 3.5.2 SVM Confusion Matrix
+```{python}
+#| eval: true
+confusion_matrix = pd.pivot_table(ovr, values='count', index='label', columns='prediction', fill_value=0)
+color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+# Create a heatmap using seaborn
+plt.figure(figsize=(8, 6))
+heatmap = sns.heatmap(confusion_matrix, annot=True, cmap=sns.color_palette(color_list), fmt='g', cbar=True)
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+heatmap.set_yticklabels([label_map[label] for label in confusion_matrix.index], rotation=0)
+heatmap.set_xticklabels([label_map[label] for label in confusion_matrix.columns], rotation=30)
+plt.title('SVM Confusion Matrix Heatmap')
+#plt.savefig("../data/plots/SVM_confusion_matrix.png")
+plt.show()
+```
+
+
+The confusion matrix heatmap for the SVM model reveals notable performance patterns across personality labels. Proficient predictions are observed for ENFJ, ENFP, ENTJ, ESFJ, and ESFP, indicating the model's accuracy in these cases. Conversely, inadequate predictions are evident for ISFJ, ISFP, ISTJ, and ISTP, reflecting the model's struggle with these labels.
+Remarkably, a recurring tendency emerges where IS types are consistently misclassified as EN types, mirroring a trend observed in the logistic regression model. This recurrent misclassification could be attributed to the inherent characteristics of IS types (Introversion and Sensing) being mistakenly associated with EN types (Extroversion and Intuition) by the model.
+Moreover, it's noteworthy that the disparity in the number of posts between IS and EN types might contribute to the misclassification trend. The lower volume of posts from IS types could lead the model to exhibit a bias, as it may be more trained and inclined towards patterns observed in the more abundant EN type posts.
+
+### 3.5.3 Random Forest Confusion Matrix
+```{python}
+#| eval: true
+confusion_matrix = pd.pivot_table(rf, values='count', index='label', columns='prediction', fill_value=0)
+#deine a color list
+color_list=['#ffffd9', '#f5fbc4', '#eaf7b1', '#d6efb3', '#bde5b5', '#97d6b9', '#73c8bd', '#52bcc2', '#37acc3', '#2498c1', '#1f80b8', '#2165ab', '#234da0', '#253795', '#172978', '#081d58']
+# Create a heatmap using seaborn
+plt.figure(figsize=(8, 6))
+heatmap = sns.heatmap(confusion_matrix, annot=True, cmap=sns.color_palette(color_list), fmt='g', cbar=True)
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+heatmap.set_yticklabels([label_map[label] for label in confusion_matrix.index], rotation=0)
+heatmap.set_xticklabels([label_map[label] for label in confusion_matrix.columns], rotation=0)
+plt.title('Random Forest Confusion Matrix Heatmap')
+#plt.savefig("../data/plots/RF_confusion_matrix.png")
+plt.show()
+
+```
+
+The plot indicates that the random forest model exhibits a tendency to classify all personality types into a limited set, specifically ENFJ, ENTP, ENTJ, ENFP, and ESFJ. This behavior results in suboptimal performance, suggesting a challenge in accurately differentiating between diverse personality types. Notably, all three models—random forest, SVM, and logistic regression—demonstrate a relative proficiency in classifying posts associated with EN-type personalities. An inference can be drawn from these observations: individuals with EN-type personalities may have a higher posting frequency compared to other personality types. Furthermore, their posts might possess distinct characteristics or features that are more easily discernible by the machine learning models, contributing to the models' better performance in classifying EN-type posts.
+
+
+
+# Executive summary
+
+**Understanding Pain Levels through MBTI Traits and Demographics**
+
+In a groundbreaking study linking personality traits with physical pain, researchers used a unique approach to predict pain levels. They considered a range of factors such as age, height, weight, gender, activity level, and notably, MBTI personality traits. The study found intriguing connections. Older individuals and those with higher weight tended to experience more pain, while taller individuals reported less. Interestingly, the study also observed that men typically reported higher pain levels than women. People with moderate activity levels experienced less pain, suggesting a benefit of regular physical activity. The study also highlighted how different personality traits, as defined by the MBTI, correlate with pain perception. For instance, individuals who score higher on extraversion or have more structured lifestyles might experience more pain.
+
+
+**Decoding Personality Type Interactions in Online Conversations**
+
+Another fascinating analysis delved into the world of online conversations, focusing on how different MBTI personality types interact. By examining discussions on platforms like Reddit, the research uncovered patterns in how certain personality types are often mentioned together. For example, it was found that discussions mentioning one personality type, like the ISFP, often include mentions of another, like the INFP. The study also revealed that some personality types, like the ENFP, have a higher tendency to be referenced alongside a variety of other types, indicating their prominent role in online discussions. This analysis offers a window into the complex web of personality interactions in digital communication.
+
+**Predicting Personality Types from Online Text**
+
+In an attempt to classify MBTI personality types based on online text entries, a comparative study of different machine learning models was conducted. The models, which included logistic regression, support vector machines, and random forests, showed varied effectiveness in identifying personality types from text data. The results indicated that certain personality types, particularly those characterized by extroversion, were more easily identifiable by these models. This suggests that the way people express themselves online can offer significant clues about their underlying personality traits.

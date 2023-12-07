@@ -1,0 +1,58 @@
+---
+title: "Feedback Discussion" 
+---
+
+![](imgs/discussion.svg)
+
+# EDA
+
+#### 1. The distribution of content length should have been calculated on the entire dataset since no individual metrics are required, just percentiles (from Professor Anderson)
+
+> The initial intent behind employing a data sample was to illustrate interactive plots with Plotly. However, when attempting to generate a plot for the complete dataset using Plotly, errors occurred, making it challenging to display the plots even with PySpark. In response to feedback, we now consider showcasing the entire dataset to be more crucial than displaying only a portion of the data with Plotly. To address this issue, we have modified the original plot to one that encompasses the entire dataset using Matplotlib instead.
+
+#### 2. Why does Topic 2 have only a very small number of posts? (from Professor Anderson)
+
+> In Topic 2, our analysis focuses exclusively on posts that mention only one MBTI type, identified through regex patterns in submission titles. The limited number of posts in this topic results from many titles either not specifying an MBTI type or mentioning multiple types. Posts with more than one MBTI type are reserved for future analysis exploring associations between different MBTI types.
+
+#### 3. Rounding for plotly labels in Topic 4. Topic 4 dichotomy charts all have different y axes, which makes things confusing to interpret. The dual axis and red line makes it seem like there is a substantial difference between post lengths but the difference is only a few characters. (from Professor Anderson)
+
+> We've refined the Plotly labels in Topic 4 to display only two decimal places for greater clarity. Acknowledging your feedback, we realize the dual-axis approach in our dichotomy charts may have inadvertently caused confusion, particularly regarding the minor differences in post lengths. To address this, we will remove the red line and the right-axis related to average post length, focusing solely on the number of posts difference between MBTI dichotomies for clearer interpretation.
+
+#### 4. The number of entries for topic 5 health data is very low. (from Professor Anderson)
+
+> The scarcity of entries for Topic 5's health data is due to the limited availability of open-source MBTI-related health information on the internet. While MBTI primarily focuses on personality types and psychological preferences, there's minimal analysis linking it to physical health and behavior. Despite the data constraints, we pursued this analysis to uncover unique insights and narratives related to MBTI and health.
+
+#### 5. Notably, the table generated from the PersonalityPost external dataset contains numerous links. It would enhance the cleanliness and readiness of the data for further analysis to clean these links. (from DSAN 6000 Peers)
+
+> This is a good catch! We weren't initially aware of the extensive presence of links in the PersonalityPost dataset. To address this, we've now cleaned the data by removing these links using regex patterns, enhancing its clarity and readiness for further analysis.
+
+#### 6. It would be beneficial to check for comments and submissions that may have been removed or deleted, as well as for duplicate and identical responses. Additionally, assessing the presence of any completely null or irrelevant (flooded) replies is important, especially since they might still be counted in your analysis. (from DSAN 6000 Peers)
+
+> We acknowledge the importance of removing empty, deleted, or duplicate responses for more accurate analysis. However, due to our NLP and ML sections being finalized with the existing dataset, revising it now would invalidate our completed work, and constraints in time and budget prevent us from redoing the analysis for this Milestone. If time and resources permit in the future, we definitely plan to revisit this project with a refined dataset.
+
+# NLP work
+
+#### 1. Heatmap of sentiment is good. What are the percentages though? Hard to tell if positive is more likely to be a low score or vice versa. (From Professor Marck)
+
+> We recognize the imbalance in the total number of sentiments in our heatmap. To provide a clearer comparison, we've now included a percentage chart alongside the heatmap, ensuring a more balanced and fair representation of sentiment labels across different groups.
+
+
+#### 2. Sampling to show the word length distribution isn’t great. Fix and do in pyspark. We’ve talked about bad sampling issues. (From Professor Marck)
+
+> After receiving the feedback, we noticed that the sampling employed was insufficient for illustrating the overall word length distribution. In response, we have opted to switch the package used. Specifically, we utilize Matplotlib for the comment length distribution and Plotly for the submission title. Our final distribution plot incorporates the entire dataset through PySpark.
+
+
+# Website/results
+
+#### 1. I noticed that the writing, although professional and grammatically sound, could benefit from a more engaging style. Incorporating analysis related to your own MBTI characteristics might add a personal touch and make the content more relatable to the audience. (From DSAN 6000 Peers)
+
+> Fantastic suggestion! To add a personal and engaging touch, our conclusion will feature a discussion about each of our unique MBTI types and the insights we've gained about ourselves and each other through this project. Interestingly, all four of us represent different MBTI types, which should make for a diverse and intriguing perspective!
+	
+	
+#### 2. To enhance understanding, consider providing more background information on the 16 personality types outlined in your business goals. (From DSAN 6000 Peers)
+
+> We've included a detailed introduction to the 16 MBTI personality types at the start of our project to establish a solid foundation for our audience. Additionally, we've provided a link to an MBTI personality test, allowing users unfamiliar with their type to discover it before delving into our project.	
+
+#### 3. Link to your EDA notebook is not accessible to the public. Use a private browser to confirm public access. (From DSAN 6000 Peers)	
+
+> We've updated the access settings on our GitHub repository to ensure public accessibility. Now, by clicking the link provided at the beginning of each milestone, users can easily access all our work, including code and outputs.
