@@ -1,5 +1,5 @@
 ---
-title: Milestone 2 NLP
+title: Milestone 2 Natural Language Processing
 author:
   - Project Team 10
   - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
@@ -10,6 +10,9 @@ author:
 
 # Analysis Report
 
+Link to [NLP Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/nlp)
+
+
 # NLP Topic 1: Sentiment Analysis
 
 > - **Business Goal:** This proposal aims to explore sentiment trends in relation to comment scores within the MBTI subreddit community. Our goal is to determine if higher-scoring comments correlate with more positive sentiments. This analysis is intended to provide insights into user engagement and the emotional content of highly-rated comments.
@@ -18,7 +21,7 @@ author:
 >- Then we will apply a pretrained sentiment analysis model to classify each comment as 'positive', 'neutral', or 'negative'. 
 >- By grouping these results according to our score categories and visualizing the data with a heatmap, we aim to reveal any significant patterns or correlations between the comment scores and their respective sentiments.
 
-Link to [Sentiment Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_sentiment.ipynb)
+Link to [Sentiment Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/blob/main/code/nlp/nlp_sentiment.ipynb)
 
 
 
@@ -230,7 +233,7 @@ plt.show()
 > - Data collection and preparation: Filtering the discussions related to the MBTI discussion. Then conduct data preprocessing steps for text data: tokenization, remove stop words,  and Count Vectorization. 
 > - Apply NLP topic modeling techniques (LDA) on submission to identify prevalent discussion topics and also get the weight of each topic word to see the dominant words in each topic.
 
-Link to [Topic Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_topic.ipynb)
+Link to [Topic Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/blob/main/code/nlp/nlp_topic.ipynb)
 
 
 ```{python}
@@ -604,7 +607,7 @@ Analyze the use of unique words and complexity of language for each MBTI type to
 > - Use frequency analysis to determine the most common words and phrases for each MBTI type and across the dichotomous axes.
 > - Develop visual representations, such as word clouds, to illustrate the unique language use and topic interests of each MBTI type and axis.
 
-Link to [Linguistic Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/nlp/nlp_linguistic.ipynb)
+Link to [Linguistic Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/blob/main/code/nlp/nlp_linguistic.ipynb)
 
 Our comprehensive analysis delves into the intricate landscape of conversations within the MBTI community on Reddit. Moving beyond a general overview of the subjects predominantly discussed in relation to MBTI, our focus now shifts to a more nuanced exploration. We aim to unravel the specific topics and keywords that are most resonant with each of the 16 distinct MBTI personality types, as well as how these discussions align with the four dichotomous axes: Introversion (I) vs. Extraversion (E), Intuition (N) vs. Sensing (S), Feeling (F) vs. Thinking (T), and Judging (J) vs. Perceiving (P).
 

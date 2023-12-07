@@ -1,5 +1,5 @@
 ---
-title: Milestone 1 EDA
+title: Milestone 1 Exploratory Data Analysis
 author:
   - Project Team 10
   - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
@@ -8,6 +8,8 @@ author:
 ![](imgs/eda.svg)
 
 # Analysis Report
+
+Link to [EDA Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/EDA)
 
 # EDA Topics 0: Data Preprocess
 

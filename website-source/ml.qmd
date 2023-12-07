@@ -1,5 +1,5 @@
 ---
-title: Milestone 3 ML
+title: Milestone 3 Machine Learning
 author:
   - Project Team 10
   - Mingqian Liu, Xinyu Li, Xin Xiang, Yanfeng Zhang
@@ -9,13 +9,16 @@ author:
 
 # Analysis Report
 
+Link to [ML Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/ml)
+
+
 # ML Topic 1: Regression Analysis
 
 ## 1.1 Analysis Goal
 
 In this analysis, our objective is to employ the MBTI Health Dataset for fitting a linear regression model that predicts an individual's total pain range, which spans from 0 to 40. This model will incorporate a variety of explanatory variables: physical attributes (height, weight, activity level), basic demographic information (age, sex), and personality traits as indicated by the Myers-Briggs Type Indicator (MBTI). The MBTI results are expressed through a combination of dichotomous traits—Extraversion (E) vs. Introversion (I), Sensing (S) vs. Intuition (N), Thinking (T) vs. Feeling (F), and Judging (J) vs. Perceiving (P)—each assigned a level between 0 and 26. Due to the complementary nature of these traits (e.g., a score of 16 in E implies a score of 10 in I), to prevent multicollinearity, we will include only one trait from each dichotomy in our model, specifically E, S, T, and J. Our goal is to explore how various factors, including posture, impact an individual's pain level and to ascertain if specific MBTI characteristics significantly influence this pain level.
 
-Link to [Regression Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_regression.ipynb)
+Link to [Regression Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/ml/ML_regression.ipynb)
 
 
 ## 1.2 Data Preprocessing
@@ -307,7 +310,7 @@ d.Markdown(md)
 
 In this study, we aim to delve into MBTI-related comments on Reddit and external data with the aim of revealing the extent to which different MBTI personality types are associated with each other in everyone's discussions. At the core of this analytical journey is the exploration of the interconnections between communication styles and expressions specific to various personality types in the digital environment. By employing FP-Growth modeling to dissect and analyze text data on Reddit and external data, our goal is not only to identify frequent item sets and association rules between MBTI types, but also to understand how these traits influence online conversations. The ultimate goal is to present these relationships through intuitive association rule network graphs, leading to a deeper understanding of how different personality types converge and diverge in the realm of digital communication.
 
-Link to [Association Rules Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_ARM.ipynb)
+Link to [Association Rules Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/ml/ML_ARM.ipynb)
 
 
 ## 2.2 Data Preprocessing
@@ -612,7 +615,7 @@ Develop a predictive model that can identify an individual's MBTI personality ty
 - Define clear metrics to compare model performances, focusing on accuracy, F1 score, Precision, and Recall to measure the model's ability to classify the posts into different MBTI types.
 - Plot confusion matrices to analyze the model's performance in predicting each MBTI type.
 
-Link to [Predictive Model Analysis Notebook Code](https://github.com/gu-dsan6000/fall-2023-reddit-project-team-10/blob/main/code/ml/ML_prediction.ipynb)
+Link to [Predictive Model Analysis Notebook Code](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main/code/mlML_prediction.ipynb)
 
 
 ## 3.2 Data Preprocessing

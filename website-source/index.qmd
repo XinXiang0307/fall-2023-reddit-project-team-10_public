@@ -22,6 +22,7 @@ In this project, we conduct a comprehensive analysis of submissions and comments
 Understanding MBTI types matters because it offers a framework for appreciating our differences and navigating interpersonal dynamics. This project aims to deepen that understanding by correlating MBTI types with online behavior and health data, potentially unveiling new insights into our digital and physical well-being. By engaging with this analysis, we hope to foster a greater appreciation for the diversity of personalities and their unique contributions to our world.
 
 
+Link to [Project Notebook Repository](https://github.com/XinXiang0307/fall-2023-reddit-project-team-10_public/tree/main)
 
 
 # Group Member Introduction

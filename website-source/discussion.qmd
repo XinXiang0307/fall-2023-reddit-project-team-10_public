@@ -4,7 +4,7 @@ title: "Feedback Discussion"
 
 ![](imgs/discussion.svg)
 
-# EDA
+# EDA Milestone
 
 #### 1. The distribution of content length should have been calculated on the entire dataset since no individual metrics are required, just percentiles (from Professor Anderson)
 
@@ -30,7 +30,7 @@ title: "Feedback Discussion"
 
 > We acknowledge the importance of removing empty, deleted, or duplicate responses for more accurate analysis. However, due to our NLP and ML sections being finalized with the existing dataset, revising it now would invalidate our completed work, and constraints in time and budget prevent us from redoing the analysis for this Milestone. If time and resources permit in the future, we definitely plan to revisit this project with a refined dataset.
 
-# NLP work
+# NLP Milestone
 
 #### 1. Heatmap of sentiment is good. What are the percentages though? Hard to tell if positive is more likely to be a low score or vice versa. (From Professor Marck)
 
@@ -42,7 +42,7 @@ title: "Feedback Discussion"
 > After receiving the feedback, we noticed that the sampling employed was insufficient for illustrating the overall word length distribution. In response, we have opted to switch the package used. Specifically, we utilize Matplotlib for the comment length distribution and Plotly for the submission title. Our final distribution plot incorporates the entire dataset through PySpark.
 
 
-# Website/results
+# Website/Results
 
 #### 1. I noticed that the writing, although professional and grammatically sound, could benefit from a more engaging style. Incorporating analysis related to your own MBTI characteristics might add a personal touch and make the content more relatable to the audience. (From DSAN 6000 Peers)
 
